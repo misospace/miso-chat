@@ -1,12 +1,11 @@
 const express = require('express');
 const session = require('express-session');
 const http = require('http');
+const WebSocket = require('ws');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const rateLimit = require('express-rate-limit');
 const https = require('https');
-const WebSocket = require('ws');
-const { randomUUID } = require('crypto');
 require('dotenv').config();
 
 const securityMiddleware = require('./security');
@@ -179,42 +178,34 @@ app.get('/api/config', isAuthenticated, (req, res) => {
   });
 });
 
-// ============ GATEWAY API (HTTP + WebSocket) ============
+// ============ GATEWAY HTTP API ============
 
-const GATEWAY_BASE_URL = process.env.GATEWAY_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
+const GATEWAY_URL = process.env.GATEWAY_URL || 'http://openclaw.llm.svc.cluster.local:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.GATEWAY_AUTH_TOKEN || '';
-
-function rewriteGatewayUrl(rawUrl, targetProtocol) {
+const GATEWAY_WS_URL = process.env.GATEWAY_WS_URL || (() => {
   try {
-    const url = new URL(rawUrl);
-
-    if (targetProtocol === 'http') {
-      if (url.protocol === 'ws:') url.protocol = 'http:';
-      if (url.protocol === 'wss:') url.protocol = 'https:';
-    } else if (targetProtocol === 'ws') {
-      if (url.protocol === 'http:') url.protocol = 'ws:';
-      if (url.protocol === 'https:') url.protocol = 'wss:';
-    }
-
-    // Use gateway root for protocol requests.
-    url.pathname = '/';
-    url.search = '';
-    url.hash = '';
-
-    return url.toString().replace(/\/$/, '');
+    const parsed = new URL(GATEWAY_URL);
+    if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
+    if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
+    return parsed.toString();
   } catch {
-    return rawUrl;
+    return 'ws://openclaw.llm.svc.cluster.local:18789';
   }
-}
+})();
+const GATEWAY_WS_ORIGIN = (() => {
+  try {
+    return new URL(GATEWAY_WS_URL).origin;
+  } catch {
+    return '';
+  }
+})();
+const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
 
-const GATEWAY_HTTP_URL = rewriteGatewayUrl(GATEWAY_BASE_URL, 'http');
-const GATEWAY_WS_URL = rewriteGatewayUrl(process.env.GATEWAY_WS_URL || GATEWAY_BASE_URL, 'ws');
-
-// Helper to call gateway via HTTP tools/invoke (used for list/history)
+// Helper to call gateway via HTTP
 function gatewayInvoke(tool, args = {}) {
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify({ tool, args });
-    const url = new URL('/tools/invoke', GATEWAY_HTTP_URL);
+    const url = new URL('/tools/invoke', GATEWAY_URL);
     const transport = url.protocol === 'https:' ? https : http;
 
     const options = {
@@ -246,105 +237,6 @@ function gatewayInvoke(tool, args = {}) {
     req.on('error', reject);
     req.write(postData);
     req.end();
-  });
-}
-
-function gatewayRequestWs(method, params = {}, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_WS_URL, [], { headers: { 'Origin': new URL(GATEWAY_WS_URL).origin } });
-    const connectId = randomUUID();
-    const requestId = randomUUID();
-    let done = false;
-    let connectAcknowledged = false;
-
-    const finish = (err, payload) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        // no-op
-      }
-      if (err) return reject(err);
-      return resolve(payload);
-    };
-
-    const timer = setTimeout(() => {
-      finish(new Error(`Gateway ${method} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    ws.on('open', () => {
-      // Wait for connect.challenge event before sending connect request.
-    });
-
-    ws.on('message', (chunk) => {
-      let frame;
-      try {
-        frame = JSON.parse(chunk.toString());
-      } catch {
-        return;
-      }
-
-      // Gateway sends nonce challenge before connect.
-      if (frame?.type === 'event' && frame?.event === 'connect.challenge') {
-        const connectParams = {
-          minProtocol: 3,
-          maxProtocol: 3,
-          client: {
-            id: 'webchat-ui',
-            displayName: 'Miso Chat Web',
-            version: process.env.npm_package_version || 'dev',
-            platform: 'node',
-            mode: 'ui',
-          },
-          role: 'operator',
-          scopes: ['operator.read', 'operator.write'],
-        };
-
-        if (GATEWAY_TOKEN) {
-          connectParams.auth = { token: GATEWAY_TOKEN };
-        }
-
-        ws.send(JSON.stringify({
-          type: 'req',
-          id: connectId,
-          method: 'connect',
-          params: connectParams,
-        }));
-        return;
-      }
-
-      if (frame?.type !== 'res') return;
-
-      if (frame.id === connectId) {
-        if (!frame.ok) {
-          return finish(new Error(frame?.error?.message || 'Gateway connect failed'));
-        }
-        connectAcknowledged = true;
-        ws.send(JSON.stringify({
-          type: 'req',
-          id: requestId,
-          method,
-          params,
-        }));
-        return;
-      }
-
-      if (frame.id === requestId) {
-        if (!frame.ok) {
-          return finish(new Error(frame?.error?.message || `Gateway ${method} failed`));
-        }
-        return finish(null, frame.payload || {});
-      }
-    });
-
-    ws.on('error', (err) => finish(err));
-    ws.on('close', () => {
-      if (!done && !connectAcknowledged) {
-        finish(new Error('Gateway websocket closed before connect acknowledgement'));
-      }
-    });
   });
 }
 
@@ -380,13 +272,154 @@ function extractReplyText(reply) {
   return '';
 }
 
-const ANNOUNCE_NOISE_MARKERS = ['ANNOUNCE_SKIP', 'Agent-to-agent announce step.', 'agent-to-agent announce step', 'agent-to-agent announce step.'];
+function buildGatewayWsHeaders() {
+  const headers = {};
+  if (GATEWAY_TOKEN) {
+    headers.Authorization = `Bearer ${GATEWAY_TOKEN}`;
+  }
+  // Must match gateway.controlUi.allowedOrigins
+  if (GATEWAY_WS_ORIGIN) {
+    headers.Origin = GATEWAY_WS_ORIGIN;
+  }
+  return headers;
+}
 
+function createRequestId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function parseGatewayFrame(raw) {
+  const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw || '');
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { type: 'text', text };
+  }
+}
+
+function frameMatchesId(frame, id) {
+  if (!frame || !id) return false;
+  return frame.id === id || frame.requestId === id || frame.replyTo === id;
+}
+
+function extractGatewayError(frame) {
+  if (!frame) return '';
+  if (typeof frame.error === 'string') return frame.error;
+  if (frame.error?.message) return frame.error.message;
+  if (frame.message && frame.status === 'error') return frame.message;
+  return '';
+}
+
+function extractGatewayResult(frame) {
+  if (!frame) return null;
+  if (frame.result !== undefined) return frame.result;
+  if (frame.reply !== undefined) return frame.reply;
+  if (frame.data !== undefined) return frame.data;
+  if (frame.payload !== undefined) return frame.payload;
+  return frame;
+}
+
+function gatewayChatSend({ sessionKey, message, timeoutSeconds }) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(GATEWAY_WS_URL, { headers: buildGatewayWsHeaders() });
+    const connectId = createRequestId('connect');
+    const sendId = createRequestId('chat-send');
+    const timeoutMs = Math.max(1000, Number(timeoutSeconds || 180) * 1000);
+
+    let closed = false;
+    let connected = false;
+
+    const done = (err, result) => {
+      if (closed) return;
+      closed = true;
+      clearTimeout(timeout);
+      try {
+        ws.close();
+      } catch {
+        // noop
+      }
+      if (err) return reject(err);
+      return resolve(result);
+    };
+
+    const timeout = setTimeout(() => {
+      done(new Error(`Gateway websocket timeout after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
+    ws.on('open', () => {
+      ws.send(
+        JSON.stringify({
+          id: connectId,
+          type: 'connect',
+          params: {
+            clientId: GATEWAY_WS_CLIENT_ID,
+          },
+        })
+      );
+    });
+
+    ws.on('message', (raw) => {
+      const frame = parseGatewayFrame(raw);
+      if (closed) return;
+
+      if (!connected) {
+        if (frameMatchesId(frame, connectId) || frame.type === 'connected' || frame.type === 'connect.ok') {
+          const connectError = extractGatewayError(frame);
+          if (connectError) {
+            return done(new Error(connectError));
+          }
+
+          connected = true;
+          ws.send(
+            JSON.stringify({
+              id: sendId,
+              type: 'chat.send',
+              params: {
+                sessionKey,
+                text: message,
+                message,
+                idempotencyKey: createRequestId('msg'),
+              },
+            })
+          );
+          return;
+        }
+
+        if (frame.type === 'error' || frame.status === 'error') {
+          const err = extractGatewayError(frame) || 'Gateway connect failed';
+          return done(new Error(err));
+        }
+
+        return;
+      }
+
+      if (frameMatchesId(frame, sendId) || frame.type === 'chat.send.ok' || frame.type === 'chat.send.result') {
+        const sendError = extractGatewayError(frame);
+        if (sendError) {
+          return done(new Error(sendError));
+        }
+        return done(null, extractGatewayResult(frame));
+      }
+    });
+
+    ws.on('error', (error) => {
+      done(error);
+    });
+
+    ws.on('close', () => {
+      if (!closed) {
+        done(new Error('Gateway websocket closed before chat.send response'));
+      }
+    });
+  });
+}
+
+const ANNOUNCE_NOISE_MARKERS = ['ANNOUNCE_SKIP', 'Agent-to-agent announce step.'];
 function isAnnounceNoiseLine(line) {
-  const value = (line || '').trim().toLowerCase();
+  const value = (line || '').trim();
   if (!value) return false;
   return ANNOUNCE_NOISE_MARKERS.some((marker) =>
-    marker.toLowerCase() === 'announce_skip' ? value.includes(marker.toLowerCase()) : value.includes(marker.toLowerCase())
+    marker === 'ANNOUNCE_SKIP' ? value.includes(marker) : value === marker
   );
 }
 
@@ -486,34 +519,23 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Filter out noise from incoming messages too
-    const filteredMessage = sanitizeAssistantText(message);
-    if (!filteredMessage || !filteredMessage.trim()) {
-      return res.json({ success: true, response: {}, responseText: '' });
-    }
+    console.log(`Sending to ${sessionKey}:`, message);
 
-    console.log(`Sending to ${sessionKey}:`, filteredMessage);
-
-    // Use gateway websocket RPC directly (chat.send) to avoid sessions_send announce noise.
-    const timeoutMs = process.env.SEND_TIMEOUT_MS
-      ? Number(process.env.SEND_TIMEOUT_MS)
-      : Number(process.env.SEND_TIMEOUT_SECONDS || 180) * 1000;
-    const payload = await gatewayRequestWs('chat.send', {
-      sessionKey,
-      message: filteredMessage,
-      thinking: 'default',
-      idempotencyKey: randomUUID(),
-      timeoutMs,
-    }, timeoutMs + 5000);
-
-    // chat.send returns run metadata; assistant text arrives via history/polling.
-    const responseText = extractReplyText(payload?.reply || payload?.response || payload?.details?.reply);
+    const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
+    const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds });
+    const responseText = extractReplyText(payload?.reply || payload?.response || payload?.details?.reply || payload);
     const filteredResponseText = sanitizeAssistantText(responseText);
 
     res.json({ success: true, response: payload, responseText: filteredResponseText });
   } catch (error) {
     console.error('Error sending:', error.message);
     const msg = String(error.message || 'send failed');
+    if (msg.includes('invalid connect params')) {
+      return res.status(500).json({
+        error:
+          'Gateway rejected websocket connect params. Ensure GATEWAY_WS_URL points at the external gateway URL, Origin matches gateway.controlUi.allowedOrigins, and clientId is webchat-ui.',
+      });
+    }
     res.status(500).json({ error: msg });
   }
 });
@@ -523,8 +545,10 @@ server.listen(PORT, () => {
   console.log(`
 🎉 ${APP_TITLE} server running on port ${PORT}
    
-   Gateway (HTTP): ${GATEWAY_HTTP_URL}
-   Gateway (WS): ${GATEWAY_WS_URL}
+   Gateway: ${GATEWAY_URL}
+   Gateway WS: ${GATEWAY_WS_URL}
+   Gateway WS Origin: ${GATEWAY_WS_ORIGIN || '(none)'}
+   Gateway WS Client: ${GATEWAY_WS_CLIENT_ID}
    Default Session: ${DEFAULT_SESSION_KEY}
    Auth: ${process.env.OIDC_ENABLED === 'true' ? 'OIDC' : 'Local'}
    Node Env: ${process.env.NODE_ENV || 'development'}
