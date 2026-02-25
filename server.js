@@ -78,11 +78,33 @@ if (process.env.OIDC_ENABLED !== 'true') {
     }
   ));
 } else {
+  const providerUrl = (process.env.OIDC_PROVIDER_URL || '').trim();
+  const providerIssuer = providerUrl
+    ? providerUrl.replace(/\/\.well-known\/openid-configuration\/?$/, '')
+    : '';
+
+  const issuer = providerIssuer || process.env.OIDC_ISSUER;
+
+  // Authentik-compatible defaults (works with app-specific provider URL)
+  const oidcOrigin = (() => {
+    try {
+      return new URL(process.env.OIDC_ISSUER || issuer).origin;
+    } catch {
+      return process.env.OIDC_ISSUER || issuer;
+    }
+  })();
+
+  const authorizationURL =
+    process.env.OIDC_AUTHORIZATION_URL || `${oidcOrigin}/application/o/authorize/`;
+  const tokenURL = process.env.OIDC_TOKEN_URL || `${oidcOrigin}/application/o/token/`;
+  const userInfoURL =
+    process.env.OIDC_USERINFO_URL || `${oidcOrigin}/application/o/userinfo/`;
+
   passport.use('oidc', new (require('passport-openidconnect').Strategy)({
-    issuer: process.env.OIDC_ISSUER,
-    authorizationURL: process.env.OIDC_ISSUER + '/authorization/',
-    tokenURL: process.env.OIDC_ISSUER + '/token/',
-    userInfoURL: process.env.OIDC_ISSUER + '/userinfo/',
+    issuer,
+    authorizationURL,
+    tokenURL,
+    userInfoURL,
     clientID: process.env.OIDC_CLIENT_ID,
     clientSecret: process.env.OIDC_CLIENT_SECRET,
     callbackURL: process.env.OIDC_CALLBACK_URL || '/auth/oidc/callback',
