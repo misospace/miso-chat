@@ -192,13 +192,7 @@ const GATEWAY_WS_URL = process.env.GATEWAY_WS_URL || (() => {
     return 'ws://openclaw.llm.svc.cluster.local:18789';
   }
 })();
-const GATEWAY_WS_ORIGIN = (() => {
-  try {
-    return new URL(GATEWAY_WS_URL).origin;
-  } catch {
-    return '';
-  }
-})();
+const GATEWAY_WS_ORIGIN = process.env.GATEWAY_WS_ORIGIN || '';
 const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
 
 // Helper to call gateway via HTTP
@@ -272,14 +266,16 @@ function extractReplyText(reply) {
   return '';
 }
 
-function buildGatewayWsHeaders() {
+function buildGatewayWsHeaders({ origin } = {}) {
   const headers = {};
   if (GATEWAY_TOKEN) {
     headers.Authorization = `Bearer ${GATEWAY_TOKEN}`;
   }
   // Must match gateway.controlUi.allowedOrigins
-  if (GATEWAY_WS_ORIGIN) {
-    headers.Origin = GATEWAY_WS_ORIGIN;
+  const requestOrigin = typeof origin === 'string' ? origin.trim() : '';
+  const wsOrigin = requestOrigin || GATEWAY_WS_ORIGIN;
+  if (wsOrigin) {
+    headers.Origin = wsOrigin;
   }
   return headers;
 }
@@ -319,9 +315,9 @@ function extractGatewayResult(frame) {
   return frame;
 }
 
-function gatewayChatSend({ sessionKey, message, timeoutSeconds }) {
+function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_WS_URL, { headers: buildGatewayWsHeaders() });
+    const ws = new WebSocket(GATEWAY_WS_URL, { headers: buildGatewayWsHeaders({ origin }) });
     const connectId = createRequestId('connect');
     const sendId = createRequestId('chat-send');
     const timeoutMs = Math.max(1000, Number(timeoutSeconds || 180) * 1000);
@@ -522,7 +518,8 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
     console.log(`Sending to ${sessionKey}:`, message);
 
     const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
-    const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds });
+    const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds, origin: requestOrigin });
     const responseText = extractReplyText(payload?.reply || payload?.response || payload?.details?.reply || payload);
     const filteredResponseText = sanitizeAssistantText(responseText);
 
@@ -533,7 +530,7 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
     if (msg.includes('invalid connect params')) {
       return res.status(500).json({
         error:
-          'Gateway rejected websocket connect params. Ensure GATEWAY_WS_URL points at the external gateway URL, Origin matches gateway.controlUi.allowedOrigins, and clientId is webchat-ui.',
+          'Gateway rejected websocket connect params. Ensure the browser Origin header is present/allowed by gateway.controlUi.allowedOrigins (or set GATEWAY_WS_ORIGIN), and clientId is webchat-ui.',
       });
     }
     res.status(500).json({ error: msg });
