@@ -30,7 +30,16 @@ app.use('/api/', limiter);
 // Middleware
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false }));
-app.use(express.static('public'));
+// Protect direct access to index file
+app.use((req, res, next) => {
+  if (req.path === '/index.html' && !req.isAuthenticated?.()) {
+    return res.redirect('/login');
+  }
+  next();
+});
+
+// Serve static assets, but do NOT auto-serve /index.html at root (keeps auth gate on /)
+app.use(express.static('public', { index: false }));
 
 // Session config
 const sessionMiddleware = session({
