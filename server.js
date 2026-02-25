@@ -292,7 +292,7 @@ function gatewayRequestWs(method, params = {}, timeoutMs = 30000) {
           minProtocol: 3,
           maxProtocol: 3,
           client: {
-            id: 'miso-chat-web',
+            id: 'webchat-ui',
             displayName: 'Miso Chat Web',
             version: process.env.npm_package_version || 'dev',
             platform: 'node',
