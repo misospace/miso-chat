@@ -391,6 +391,83 @@
         .code-block[data-lang="shell"] {
             border-left-color: #ffb14a;
         }
+
+        /* Tool call blocks */
+        .tool-call {
+            margin-top: 8px;
+            border: 1px solid var(--border);
+            border-left: 3px solid #7f8cff;
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(127, 140, 255, 0.06);
+        }
+
+        .tool-call-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
+        .tool-call-header:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .tool-call-header .tool-call-icon {
+            font-size: 14px;
+        }
+
+        .tool-call-header .tool-call-name {
+            color: var(--text-primary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-weight: 500;
+        }
+
+        .tool-call-header .tool-call-status {
+            margin-left: auto;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .tool-call-status.calling { color: #ffb14a; }
+        .tool-call-status.success { color: #37c8ab; }
+        .tool-call-status.error { color: #e94560; }
+
+        .tool-call-body {
+            padding: 0 12px 10px;
+            display: none;
+        }
+
+        .tool-call.expanded .tool-call-body {
+            display: block;
+        }
+
+        .tool-call-body pre {
+            margin: 0;
+            padding: 8px 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            color: var(--text-secondary);
+        }
+
+        .tool-call-body .tool-call-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
         
         /* Quick Actions */
         .quick-actions {
@@ -827,7 +904,8 @@
 
         function renderBubbleContent(bubble, text) {
             bubble.textContent = '';
-            const value = String(text || '');
+            const value = String(text || '').trim();
+            if (!value) return;
 
             let cursor = 0;
             let match;
@@ -841,6 +919,74 @@
             const tail = value.slice(cursor);
             if (tail) appendTextWithInlineCode(bubble, tail);
             CODE_BLOCK_REGEX.lastIndex = 0;
+        }
+
+        function renderToolCallBlock(toolCall) {
+            const block = document.createElement('div');
+            block.className = 'tool-call';
+
+            const status = toolCall.status || (toolCall.error ? 'error' : (toolCall.result !== undefined ? 'success' : 'calling'));
+            const statusLabel = status === 'calling' ? 'Calling…' : status === 'success' ? 'Done' : 'Error';
+
+            const header = document.createElement('div');
+            header.className = 'tool-call-header';
+            header.setAttribute('role', 'button');
+            header.setAttribute('aria-expanded', 'false');
+            header.innerHTML = [
+                '<span class="tool-call-icon">🔧</span>',
+                '<span class="tool-call-name">' + escapeHtml(toolCall.name || 'tool') + '</span>',
+                '<span class="tool-call-status ' + status + '">' + escapeHtml(statusLabel) + '</span>',
+            ].join('');
+
+            const body = document.createElement('div');
+            body.className = 'tool-call-body';
+
+            const hasArgs = toolCall.arguments && String(toolCall.arguments).trim();
+            if (hasArgs) {
+                const argsLabel = document.createElement('div');
+                argsLabel.className = 'tool-call-label';
+                argsLabel.textContent = 'Arguments';
+                body.appendChild(argsLabel);
+                const argsPre = document.createElement('pre');
+                try {
+                    argsPre.textContent = typeof toolCall.arguments === 'string'
+                        ? toolCall.arguments
+                        : JSON.stringify(toolCall.arguments, null, 2);
+                } catch {
+                    argsPre.textContent = String(toolCall.arguments);
+                }
+                body.appendChild(argsPre);
+            }
+
+            if (toolCall.error) {
+                const errLabel = document.createElement('div');
+                errLabel.className = 'tool-call-label';
+                errLabel.textContent = 'Error';
+                body.appendChild(errLabel);
+                const errPre = document.createElement('pre');
+                errPre.textContent = typeof toolCall.error === 'string' ? toolCall.error : JSON.stringify(toolCall.error);
+                body.appendChild(errPre);
+            } else if (toolCall.result !== undefined && toolCall.result !== null) {
+                const resLabel = document.createElement('div');
+                resLabel.className = 'tool-call-label';
+                resLabel.textContent = 'Result';
+                body.appendChild(resLabel);
+                const resPre = document.createElement('pre');
+                resPre.textContent = typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2);
+                body.appendChild(resPre);
+            }
+
+            block.appendChild(header);
+            block.appendChild(body);
+
+            if (body.childNodes.length > 0) {
+                header.addEventListener('click', () => {
+                    block.classList.toggle('expanded');
+                    header.setAttribute('aria-expanded', block.classList.contains('expanded'));
+                });
+            }
+
+            return block;
         }
 
         function queueId() {
@@ -1111,6 +1257,7 @@
 
                     addMessage(sender, msg.content, {
                         reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                        toolCalls: msg.toolCalls,
                     });
                 });
             } catch (error) {
@@ -1137,21 +1284,34 @@
             const contentWrap = document.createElement('div');
             contentWrap.className = 'message-content';
 
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-            renderBubbleContent(bubble, content);
-            bubble.addEventListener('click', (event) => {
-                const btn = event.target.closest('.copy-code-btn');
-                if (!btn) return;
-                event.preventDefault();
-                event.stopPropagation();
-                copyCodeFromButton(btn);
-            });
-            contentWrap.appendChild(bubble);
+            const text = typeof content === 'string' ? content : (content?.text ?? content?.content ?? '');
+            const toolCalls = options.toolCalls || (typeof content === 'object' && content !== null ? content.toolCalls : null) || [];
+            const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+            const hasText = String(text || '').trim().length > 0;
+
+            if (hasText || (sender === 'miso' && hasToolCalls)) {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                renderBubbleContent(bubble, hasText ? text : 'Used tools.');
+                bubble.addEventListener('click', (event) => {
+                    const btn = event.target.closest('.copy-code-btn');
+                    if (!btn) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    copyCodeFromButton(btn);
+                });
+                contentWrap.appendChild(bubble);
+            }
+
+            if (hasToolCalls) {
+                toolCalls.forEach((tc) => {
+                    contentWrap.appendChild(renderToolCallBlock(tc));
+                });
+            }
 
             const shouldShowReactions = sender !== 'system';
             if (shouldShowReactions) {
-                const key = reactionKey(sender, content, options.reactionKeyHint || options.messageId || '');
+                const key = reactionKey(sender, hasText ? text : (hasToolCalls ? 'toolCalls:' + toolCalls.length : ''), options.reactionKeyHint || options.messageId || '');
                 const row = document.createElement('div');
                 row.className = 'reaction-row';
 
@@ -1213,6 +1373,7 @@
                 addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
                     reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
                     suppressNotify: true,
+                    toolCalls: msg.toolCalls,
                 });
             });
         }
@@ -1339,9 +1500,10 @@
                     const text = hasSanitizedResponse
                         ? data.responseText
                         : (data.response?.text || data.response?.message);
-                    if (text && text.trim()) {
-                        rememberLocalAssistantEcho(text);
-                        addMessage('miso', text, { reactionKeyHint: `reply:${next.id}` });
+                    const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                    if ((text && text.trim()) || toolCalls.length > 0) {
+                        if (text && text.trim()) rememberLocalAssistantEcho(text);
+                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
                     }
                 }
             } catch (error) {
