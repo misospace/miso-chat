@@ -28,7 +28,7 @@
     "cors": "^2.8.5"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
+    "jest": "^30.0.0",
     "supertest": "^6.3.3",
     "eslint": "^8.56.0",
     "nodemon": "^3.0.2"
