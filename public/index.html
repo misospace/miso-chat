@@ -740,7 +740,7 @@
         let localAssistantEchoes = new Map();
 
         const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
-        const TABLE_REGEX = /\|([^|]+)\|\n\|[-:|\s]+\|\n((?:\|[^|]+\|\n?)+)/g;
+        const TABLE_REGEX = /\|[^\n]+\|\n\|[-:|\s]+\|\n((?:\|[^\n]+\|\n?)+)/g;
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
 
