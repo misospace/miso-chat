@@ -10,7 +10,7 @@
     "test:ci": "node --check server.js && echo '{}' > test-results.json"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.0.0",
     "express": "^5.0.0",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",
