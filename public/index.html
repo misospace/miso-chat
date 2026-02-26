@@ -1295,7 +1295,10 @@
                 sendQueue.unshift(next);
                 savePendingQueue(sendQueue);
             } finally {
-                typingIndicator.classList.remove('active');
+                // Minimum display time for typing indicator visibility
+                setTimeout(() => {
+                    typingIndicator.classList.remove('active');
+                }, 500);
                 sending = false;
                 const remaining = queueCountForSession(currentSessionKey);
                 setOnlineState(true, remaining > 0 ? `Online · queue ${remaining}` : 'Online');
