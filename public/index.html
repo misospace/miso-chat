@@ -1578,10 +1578,52 @@
             }
         }
 
+        // Slash command handler
+        function handleSlashCommand(cmd) {
+            const command = cmd.slice(1).trim().toLowerCase();
+            
+            switch (command) {
+                case 'help':
+                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show connection status\n- /stop - Stop current queue processing');
+                    break;
+                case 'clear':
+                    clearChatDisplay();
+                    addMessage('system', 'Chat cleared.');
+                    break;
+                case 'status':
+                    const queueCount = sendQueue.filter(item => !item.sessionKey || item.sessionKey === currentSessionKey).length;
+                    addMessage('system', `Status: Online\nQueue: ${queueCount} message(s)\nSession: ${currentSessionKey || 'None'}`);
+                    break;
+                case 'stop':
+                    sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
+                    savePendingQueue(sendQueue);
+                    addMessage('system', 'Queue cleared for this session.');
+                    break;
+                default:
+                    addMessage('system', `Unknown command: /${command}\nType /help for available commands.`);
+            }
+        }
+
+        function clearChatDisplay() {
+            const messagesContainer = document.getElementById('messages');
+            if (messagesContainer) {
+                messagesContainer.innerHTML = '';
+            }
+        }
+
         function sendMessage(text = null) {
             const raw = text ?? messageInput.value ?? '';
             const messageText = String(raw).trim();
             if (!messageText) return;
+            
+            // Handle slash commands immediately (bypass queue)
+            if (messageText.startsWith('/')) {
+                handleSlashCommand(messageText);
+                messageInput.value = '';
+                resizeMessageInput();
+                return;
+            }
+            
             if (!currentSessionKey) {
                 addMessage('system', 'Select a session first.');
                 return;
