@@ -123,7 +123,9 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         if: github.event_name != 'pull_request'
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          # Filter out invalid tags (those starting with -)
+          VALID_TAGS=$(jq -cr '[.tags[] | select(startswith("-") | not)] | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          docker buildx imagetools create $VALID_TAGS \
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
       - name: Inspect image
