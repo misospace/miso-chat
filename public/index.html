@@ -362,6 +362,34 @@
         .code-block-body .tok-property { color: #7bdff2; }
         .code-block-body .tok-command { color: #f7b267; }
 
+        /* Markdown table styling */
+        .message-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            font-size: 0.9em;
+        }
+
+        .message-table th,
+        .message-table td {
+            padding: 8px 12px;
+            border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+            text-align: left;
+        }
+
+        .message-table th {
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: 600;
+        }
+
+        .message-table tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .message-table td {
+            vertical-align: top;
+        }
+
         .copy-code-btn {
             border: 1px solid rgba(255, 255, 255, 0.22);
             background: rgba(255, 255, 255, 0.08);
@@ -712,6 +740,7 @@
         let localAssistantEchoes = new Map();
 
         const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
+        const TABLE_REGEX = /\|([^|]+)\|\n\|[-:|\s]+\|\n((?:\|[^|]+\|\n?)+)/g;
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
 
@@ -957,23 +986,107 @@
             container.appendChild(block);
         }
 
+        function renderTable(tableText) {
+            const lines = tableText.trim().split('\n');
+            if (lines.length < 2) return null;
+            
+            // Parse header row
+            const headers = lines[0].split('|').filter(c => c.trim()).map(c => c.trim());
+            
+            // Skip separator line (line 1)
+            // Parse data rows
+            const rows = [];
+            for (let i = 2; i < lines.length; i++) {
+                const cells = lines[i].split('|').filter(c => c.trim()).map(c => c.trim());
+                if (cells.length > 0) rows.push(cells);
+            }
+            
+            // Build HTML table
+            const table = document.createElement('table');
+            table.className = 'message-table';
+            
+            // Header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            for (const h of headers) {
+                const th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            }
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            // Body
+            const tbody = document.createElement('tbody');
+            for (const row of rows) {
+                const tr = document.createElement('tr');
+                for (let i = 0; i < headers.length; i++) {
+                    const td = document.createElement('td');
+                    td.textContent = row[i] || '';
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            
+            return table;
+        }
+
         function renderBubbleContent(bubble, text) {
             bubble.textContent = '';
             const value = String(text || '').trim();
             if (!value) return;
 
-            let cursor = 0;
-            let match;
-            while ((match = CODE_BLOCK_REGEX.exec(value)) !== null) {
-                const before = value.slice(cursor, match.index);
-                if (before) appendTextWithInlineCode(bubble, before);
-                appendFencedCode(bubble, match[1] || '', match[2] || '');
-                cursor = match.index + match[0].length;
-            }
-
-            const tail = value.slice(cursor);
-            if (tail) appendTextWithInlineCode(bubble, tail);
+            // Find all code blocks and tables
+            const segments = [];
+            let lastEnd = 0;
+            
+            // Reset regex indices
             CODE_BLOCK_REGEX.lastIndex = 0;
+            TABLE_REGEX.lastIndex = 0;
+            
+            const codeMatches = [...value.matchAll(CODE_BLOCK_REGEX)];
+            const tableMatches = [...value.matchAll(TABLE_REGEX)];
+            
+            // Combine and sort by position
+            const allMatches = [
+                ...codeMatches.map(m => ({ type: 'code', ...m })),
+                ...tableMatches.map(m => ({ type: 'table', ...m }))
+            ].sort((a, b) => a.index - b.index);
+            
+            for (const match of allMatches) {
+                // Skip overlapping matches
+                if (match.index < lastEnd) continue;
+                
+                // Add text before this match
+                if (match.index > lastEnd) {
+                    segments.push({ type: 'text', content: value.slice(lastEnd, match.index) });
+                }
+                
+                if (match.type === 'code') {
+                    segments.push({ type: 'code', lang: match[1], code: match[2] });
+                } else if (match.type === 'table') {
+                    segments.push({ type: 'table', content: match[0] });
+                }
+                lastEnd = match.index + match[0].length;
+            }
+            
+            // Add remaining text
+            if (lastEnd < value.length) {
+                segments.push({ type: 'text', content: value.slice(lastEnd) });
+            }
+            
+            // Render segments
+            for (const seg of segments) {
+                if (seg.type === 'text') {
+                    if (seg.content) appendTextWithInlineCode(bubble, seg.content);
+                } else if (seg.type === 'code') {
+                    appendFencedCode(bubble, seg.lang || '', seg.code);
+                } else if (seg.type === 'table') {
+                    const tableEl = renderTable(seg.content);
+                    if (tableEl) bubble.appendChild(tableEl);
+                }
+            }
         }
 
         function renderToolCallBlock(toolCall) {
