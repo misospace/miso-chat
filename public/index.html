@@ -133,7 +133,20 @@
             line-height: 1;
         }
 
-        .icon-btn:active {
+        .emoji-btn {
+            position: absolute;
+            right: 60px;
+            bottom: 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 50;
+        }
+
+        .emoji-btn:active {
             transform: scale(0.96);
         }
 
@@ -593,10 +606,20 @@
             border-radius: 8px;
             padding: 8px;
             display: none;
-            grid-template-columns: repeat(8, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 4px;
-            max-width: 280px;
+            max-width: 200px;
+            max-height: 200px;
+            overflow-y: auto;
             z-index: 100;
+        }
+
+        @media (min-width: 768px) {
+            .emoji-picker {
+                grid-template-columns: repeat(8, 1fr);
+                max-width: 280px;
+                max-height: 300px;
+            }
         }
 
         .emoji-picker.open {
@@ -746,13 +769,13 @@
         <div class="input-wrapper">
             <textarea id="messageInput" rows="1" placeholder="Message Miso... (Enter to send, Shift+Enter for new line)" autocomplete="off" autocorrect="off" autocapitalize="sentences"></textarea>
         </div>
-        <button type="button" class="icon-btn" id="emojiBtn" title="Add emoji">😊</button>
         <button type="button" class="send-btn" id="sendBtn" onclick="sendMessage()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
         </button>
+        <button type="button" class="emoji-btn" id="emojiBtn" title="Add emoji">😊</button>
     </div>
 
     <script>
