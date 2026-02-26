@@ -876,6 +876,35 @@
             return sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey).length;
         }
 
+        // Load reactions from API (async), fallback to localStorage
+        async function loadReactionsForMessage(messageId) {
+            if (!messageId) return null;
+            try {
+                const res = await fetch(`/api/messages/${encodeURIComponent(messageId)}/reactions`);
+                if (res.ok) {
+                    const data = await res.json();
+                    return data.reactions || {};
+                }
+            } catch { /* ignore API errors, fallback to localStorage */ }
+            return null;
+        }
+
+        // Save reaction via API (async), fallback to localStorage
+        async function toggleReaction(messageId, emoji) {
+            if (!messageId) return null;
+            try {
+                const res = await fetch(`/api/messages/${encodeURIComponent(messageId)}/reactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ emoji })
+                });
+                if (res.ok) {
+                    return await res.json();
+                }
+            } catch { /* ignore API errors, fallback to localStorage */ }
+            return null;
+        }
+
         function loadReactions() {
             try {
                 const stored = localStorage.getItem(REACTION_STORAGE_KEY);
@@ -1006,6 +1035,12 @@
         function addMessage(sender, content, options = {}) {
             const div = document.createElement('div');
             div.className = `message ${sender}`;
+            
+            // Store messageId for API calls
+            const messageId = options.messageId || options.timestamp || options.reactionKeyHint || null;
+            if (messageId) {
+                div.dataset.messageId = messageId;
+            }
 
             if (sender === 'miso') {
                 const avatar = document.createElement('img');
@@ -1052,15 +1087,45 @@
                         btn.setAttribute('aria-pressed', 'true');
                     }
 
-                    btn.addEventListener('click', () => {
-                        const currentlySelected = messageReactions[key] === emoji;
-                        if (currentlySelected) {
-                            delete messageReactions[key];
+                    btn.addEventListener('click', async () => {
+                        // Try API first, fallback to localStorage
+                        const apiResult = await toggleReaction(messageId, emoji);
+                        if (apiResult && apiResult.reactions) {
+                            // Update UI from API response
+                            Object.entries(apiResult.reactions).forEach(([e, data]) => {
+                                const btnEl = row.querySelector(`.reaction-btn[aria-label*="${e}"]`);
+                                if (data.count > 0) {
+                                    btnEl.classList.add('active');
+                                    btnEl.setAttribute('aria-pressed', 'true');
+                                    btnEl.textContent = `${e} ${data.count}`;
+                                } else {
+                                    btnEl.classList.remove('active');
+                                    btnEl.setAttribute('aria-pressed', 'false');
+                                    btnEl.textContent = e;
+                                }
+                            });
                         } else {
-                            messageReactions[key] = emoji;
+                            // Fallback to localStorage
+                            const currentlySelected = messageReactions[key] === emoji;
+                            if (currentlySelected) {
+                                delete messageReactions[key];
+                            } else {
+                                messageReactions[key] = emoji;
+                            }
+                            saveReactions(messageReactions);
+                            row.querySelectorAll('.reaction-btn').forEach((node) => {
+                                const active = messageReactions[key] === node.textContent;
+                                node.classList.toggle('active', active);
+                                node.setAttribute('aria-pressed', active ? 'true' : 'false');
+                            });
                         }
-                        saveReactions(messageReactions);
-                        row.querySelectorAll('.reaction-btn').forEach((node) => {
+                    });
+
+                    row.appendChild(btn);
+                });
+
+                contentWrap.appendChild(row);
+            }
                             const active = messageReactions[key] === node.textContent;
                             node.classList.toggle('active', active);
                             node.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -1090,7 +1155,9 @@
             }
             messages.forEach((msg, index) => {
                 addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
+                    messageId: msg.timestamp || `history-${index}`,
                     reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                    timestamp: msg.timestamp,
                     suppressNotify: true,
                 });
             });

@@ -414,6 +414,46 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds }) {
   });
 }
 
+// ============ REACTIONS STORE (in-memory, optionally Redis) ============
+const reactionStore = new Map(); // messageId -> { emoji: { count, users: [] } }
+
+const REDIS_URL = process.env.REDIS_URL;
+let redisClient = null;
+
+if (REDIS_URL) {
+  try {
+    const { createClient } = require('redis');
+    redisClient = createClient({ url: REDIS_URL });
+    redisClient.on('error', (err) => console.error('Redis error:', err.message));
+    redisClient.connect().catch((err) => console.error('Redis connect error:', err.message));
+  } catch {
+    console.log('Redis not available, using in-memory store');
+  }
+}
+
+const REACTION_EMOJIS = ['❤️', '👍', '😂', '👀'];
+
+// Load reactions from Redis (if available)
+async function loadReactionsFromStore(messageId) {
+  if (redisClient) {
+    try {
+      const data = await redisClient.get(`reactions:${messageId}`);
+      return data ? JSON.parse(data) : {};
+    } catch { /* ignore */ }
+  }
+  return reactionStore.get(messageId) || {};
+}
+
+// Save reactions to Redis (if available)
+async function saveReactionsToStore(messageId, reactions) {
+  if (redisClient) {
+    try {
+      await redisClient.set(`reactions:${messageId}`, JSON.stringify(reactions));
+    } catch { /* ignore */ }
+  }
+  reactionStore.set(messageId, reactions);
+}
+
 const ANNOUNCE_NOISE_MARKERS = ['ANNOUNCE_SKIP', 'Agent-to-agent announce step.'];
 function isAnnounceNoiseLine(line) {
   const value = (line || '').trim();
@@ -537,6 +577,86 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
       });
     }
     res.status(500).json({ error: msg });
+  }
+});
+
+// ============ REACTIONS API ============
+
+// GET /api/messages/:messageId/reactions - Get reactions for a message
+app.get('/api/messages/:messageId/reactions', isAuthenticated, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const reactions = await loadReactionsFromStore(messageId);
+    res.json({ messageId, reactions });
+  } catch (error) {
+    console.error('Error getting reactions:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/:messageId/reactions - Add a reaction
+// Body: { emoji, username }
+app.post('/api/messages/:messageId/reactions', isAuthenticated, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji, username } = req.body;
+
+    if (!emoji || !REACTION_EMOJIS.includes(emoji)) {
+      return res.status(400).json({ error: `Invalid emoji. Allowed: ${REACTION_EMOJIS.join(', ')}` });
+    }
+
+    const user = username || req.user?.username || 'anonymous';
+    const reactions = await loadReactionsFromStore(messageId);
+
+    if (!reactions[emoji]) {
+      reactions[emoji] = { count: 0, users: [] };
+    }
+
+    // Toggle: add if not present, remove if present
+    const userIndex = reactions[emoji].users.indexOf(user);
+    if (userIndex === -1) {
+      reactions[emoji].users.push(user);
+      reactions[emoji].count = reactions[emoji].users.length;
+    } else {
+      reactions[emoji].users.splice(userIndex, 1);
+      reactions[emoji].count = reactions[emoji].users.length;
+      if (reactions[emoji].count === 0) {
+        delete reactions[emoji];
+      }
+    }
+
+    await saveReactionsToStore(messageId, reactions);
+    res.json({ messageId, emoji, action: userIndex === -1 ? 'added' : 'removed', reactions });
+  } catch (error) {
+    console.error('Error adding reaction:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/messages/:messageId/reactions/:emoji - Remove a reaction
+app.delete('/api/messages/:messageId/reactions/:emoji', isAuthenticated, async (req, res) => {
+  try {
+    const { messageId, emoji } = req.params;
+    const user = req.user?.username || 'anonymous';
+
+    const reactions = await loadReactionsFromStore(messageId);
+
+    if (reactions[emoji]) {
+      const userIndex = reactions[emoji].users.indexOf(user);
+      if (userIndex !== -1) {
+        reactions[emoji].users.splice(userIndex, 1);
+        reactions[emoji].count = reactions[emoji].users.length;
+        if (reactions[emoji].count === 0) {
+          delete reactions[emoji];
+        }
+        await saveReactionsToStore(messageId, reactions);
+      }
+    }
+
+    res.json({ messageId, emoji, removed: true, reactions });
+  } catch (error) {
+    console.error('Error removing reaction:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
