@@ -1732,14 +1732,17 @@
                         if (text && text.trim()) rememberLocalAssistantEcho(text);
                         addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
                     }
+                    
+                    // Remove typing indicator after getting response
+                    typingIndicator.classList.remove('active');
                 }
             } catch (error) {
                 console.error('Send error:', error);
                 addMessage('system', `Send failed: ${error.message}`);
                 sendQueue.unshift(next);
                 savePendingQueue(sendQueue);
-            } finally {
                 typingIndicator.classList.remove('active');
+            } finally {
                 sending = false;
                 const remaining = queueCountForSession(currentSessionKey);
                 setOnlineState(true, queueStatusText(currentSessionKey));
