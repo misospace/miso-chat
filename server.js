@@ -1000,7 +1000,7 @@ server.listen(PORT, async () => {
 🎉 ${APP_TITLE} server running on port ${PORT}
    
    Gateway: ${GATEWAY_URL}
-   Gateway WS: ${GATEWAY_WS_URL}
+   Gateway WS: ${typeof GATEWAY_WS_URL === 'function' ? GATEWAY_WS_URL() : GATEWAY_WS_URL}
    Gateway WS Origin: ${GATEWAY_WS_ORIGIN || '(none)'}
    Gateway WS Client: ${GATEWAY_WS_CLIENT_ID} (${GATEWAY_WS_CLIENT_MODE})
    Gateway Device Identity: ${fs.existsSync(GATEWAY_DEVICE_IDENTITY_PATH) ? GATEWAY_DEVICE_IDENTITY_PATH : 'missing'}
