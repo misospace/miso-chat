@@ -11,10 +11,14 @@ const path = require('path');
 const crypto = require('crypto');
 require('dotenv').config();
 
+const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 
 const app = express();
 const server = http.createServer(app);
+
+// SSE clients for real-time gateway event forwarding
+const sseClients = new Set();
 
 // Trust proxy for rate limiting behind Envoy
 app.set('trust proxy', 1);
@@ -181,6 +185,36 @@ app.get('/api/config', isAuthenticated, (req, res) => {
   });
 });
 
+// SSE endpoint for real-time gateway events (typing, message delta, errors)
+app.get('/api/events', isAuthenticated, (req, res) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  // Send initial connection event
+  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+
+  // Add client to connected set
+  sseClients.add(res);
+  console.log(`📡 SSE client connected (${sseClients.size} total)`);
+
+  // Remove client on close
+  req.on('close', () => {
+    sseClients.delete(res);
+    console.log(`📡 SSE client disconnected (${sseClients.size} total)`);
+  });
+});
+
+// Helper to broadcast events to all SSE clients
+function broadcastToSseClients(event, data) {
+  const payload = JSON.stringify({ event, data, timestamp: Date.now() });
+  for (const client of sseClients) {
+    client.write(`data: ${payload}\n\n`);
+  }
+}
+
 // ============ GATEWAY HTTP API ============
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://openclaw.llm.svc.cluster.local:18789';
@@ -195,12 +229,29 @@ const GATEWAY_WS_URL = process.env.GATEWAY_WS_URL || (() => {
     return 'ws://openclaw.llm.svc.cluster.local:18789';
   }
 })();
+
+// Helper function to get GATEWAY_WS_URL value (handles both string and function types)
+const getGatewayWsUrl = () => typeof GATEWAY_WS_URL === 'function' ? GATEWAY_WS_URL() : GATEWAY_WS_URL;
 const GATEWAY_WS_ORIGIN = process.env.GATEWAY_WS_ORIGIN || '';
 const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
 const GATEWAY_WS_CLIENT_MODE = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
 const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH
   || path.join(process.env.HOME || '/home/node', '.openclaw', 'identity', 'device.json');
 const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
+
+// Persistent WebSocket manager for gateway connections
+const gatewayWsManager = new GatewayWsManager({
+  wsUrl: getGatewayWsUrl(),
+  clientId: GATEWAY_WS_CLIENT_ID,
+  clientMode: GATEWAY_WS_CLIENT_MODE,
+  headers: {
+    ...(GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {}),
+    ...(GATEWAY_WS_ORIGIN ? { Origin: GATEWAY_WS_ORIGIN } : {}),
+  },
+  maxReconnectAttempts: 5,
+  reconnectDelay: 1000,
+  reconnectBackoff: 2,
+});
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 let cachedGatewayDeviceIdentity = null;
@@ -546,9 +597,36 @@ function extractGatewayResult(frame) {
   return frame;
 }
 
-function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
+// Use persistent WebSocket manager if available and connected, otherwise fall back to per-request WS
+async function gatewayChatSendWithManager({ sessionKey, message, timeoutSeconds }) {
+  if (!gatewayWsManager.isConnected()) {
+    return null; // Signal to use fallback
+  }
+
+  // gatewayWsManager.send() handles timeouts internally
+  try {
+    const frame = await gatewayWsManager.send('chat.send', {
+      sessionKey,
+      message,
+      deliver: false,
+      idempotencyKey: gatewayWsManager.createRequestId('msg'),
+    }, timeoutSeconds || 180);
+
+    const error = extractGatewayError(frame);
+    if (error) {
+      throw new Error(error);
+    }
+    return extractGatewayResult(frame);
+  } catch (err) {
+    throw err; // Let main function handle fallback
+  }
+}
+
+// Per-request WebSocket fallback (original implementation)
+function gatewayChatSendFallback({ sessionKey, message, timeoutSeconds, origin }) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_WS_URL, { headers: buildGatewayWsHeaders({ origin }) });
+    const wsUrl = getGatewayWsUrl();
+    const ws = new WebSocket(wsUrl, { headers: buildGatewayWsHeaders({ origin }) });
     const connectId = createRequestId('connect');
     const sendId = createRequestId('chat-send');
     const timeoutMs = Math.max(1000, Number(timeoutSeconds || 180) * 1000);
@@ -694,6 +772,22 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
       }
     });
   });
+}
+
+// Main gatewayChatSend - tries persistent manager first, falls back to per-request
+async function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
+  // Try persistent manager first
+  try {
+    const result = await gatewayChatSendWithManager({ sessionKey, message, timeoutSeconds });
+    if (result !== null) {
+      return result; // Used persistent manager successfully
+    }
+  } catch (err) {
+    console.warn('⚠️ Persistent WS manager failed, falling back to per-request:', err.message);
+  }
+  
+  // Fall back to per-request WebSocket
+  return gatewayChatSendFallback({ sessionKey, message, timeoutSeconds, origin });
 }
 
 const ANNOUNCE_NOISE_MARKERS = ['ANNOUNCE_SKIP', 'Agent-to-agent announce step.'];
@@ -846,12 +940,50 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+
+// Initialize WebSocket manager at startup
+const initGatewayWsManager = async () => {
+  try {
+    const origin = GATEWAY_WS_ORIGIN || 'http://localhost:3000';
+    await gatewayWsManager.connect(origin);
+    console.log('✅ Persistent Gateway WS manager connected');
+    
+    // Set up reconnection event handlers
+    gatewayWsManager.on('reconnecting', (attempt, delay) => {
+      console.log(`🔄 Gateway WS reconnecting (attempt ${attempt}) in ${delay}ms...`);
+    });
+    
+    gatewayWsManager.on('reconnect-failed', (err) => {
+      console.error('❌ Gateway WS reconnection failed:', err.message);
+    });
+    
+    gatewayWsManager.on('close', (code, reason) => {
+      console.log(`🔌 Gateway WS closed: ${code} ${reason}`);
+    });
+    
+    gatewayWsManager.on('error', (err) => {
+      console.error('⚠️ Gateway WS error:', err.message);
+    });
+    
+    // Forward gateway events to SSE clients
+    gatewayWsManager.on('gateway-event', (eventType, eventData) => {
+      console.log(`📡 Gateway event: ${eventType}`, eventData ? JSON.stringify(eventData).slice(0, 100) : '');
+      broadcastToSseClients(eventType, eventData);
+    });
+    
+  } catch (err) {
+    console.error('❌ Failed to initialize persistent Gateway WS manager:', err.message);
+    console.log('   Will fall back to per-request WebSocket connections');
+  }
+};
+
+// Start server and initialize WS manager
+server.listen(PORT, async () => {
   console.log(`
 🎉 ${APP_TITLE} server running on port ${PORT}
    
    Gateway: ${GATEWAY_URL}
-   Gateway WS: ${GATEWAY_WS_URL}
+   Gateway WS: ${getGatewayWsUrl()}
    Gateway WS Origin: ${GATEWAY_WS_ORIGIN || '(none)'}
    Gateway WS Client: ${GATEWAY_WS_CLIENT_ID} (${GATEWAY_WS_CLIENT_MODE})
    Gateway Device Identity: ${fs.existsSync(GATEWAY_DEVICE_IDENTITY_PATH) ? GATEWAY_DEVICE_IDENTITY_PATH : 'missing'}
@@ -866,4 +998,7 @@ server.listen(PORT, () => {
    - GET  /api/sessions/:key/history
    - POST /api/sessions/:key/send
   `);
+  
+  // Initialize persistent WebSocket manager
+  await initGatewayWsManager();
 });
