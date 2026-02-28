@@ -17,6 +17,9 @@ const securityMiddleware = require('./security');
 const app = express();
 const server = http.createServer(app);
 
+// SSE clients for real-time gateway event forwarding
+const sseClients = new Set();
+
 // Trust proxy for rate limiting behind Envoy
 app.set('trust proxy', 1);
 
@@ -181,6 +184,36 @@ app.get('/api/config', isAuthenticated, (req, res) => {
     defaultSessionKey: DEFAULT_SESSION_KEY,
   });
 });
+
+// SSE endpoint for real-time gateway events (typing, message delta, errors)
+app.get('/api/events', isAuthenticated, (req, res) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  // Send initial connection event
+  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+
+  // Add client to connected set
+  sseClients.add(res);
+  console.log(`📡 SSE client connected (${sseClients.size} total)`);
+
+  // Remove client on close
+  req.on('close', () => {
+    sseClients.delete(res);
+    console.log(`📡 SSE client disconnected (${sseClients.size} total)`);
+  });
+});
+
+// Helper to broadcast events to all SSE clients
+function broadcastToSseClients(event, data) {
+  const payload = JSON.stringify({ event, data, timestamp: Date.now() });
+  for (const client of sseClients) {
+    client.write(`data: ${payload}\n\n`);
+  }
+}
 
 // ============ GATEWAY HTTP API ============
 
@@ -881,6 +914,12 @@ const initGatewayWsManager = async () => {
     
     gatewayWsManager.on('error', (err) => {
       console.error('⚠️ Gateway WS error:', err.message);
+    });
+    
+    // Forward gateway events to SSE clients
+    gatewayWsManager.on('gateway-event', (eventType, eventData) => {
+      console.log(`📡 Gateway event: ${eventType}`, eventData ? JSON.stringify(eventData).slice(0, 100) : '');
+      broadcastToSseClients(eventType, eventData);
     });
     
   } catch (err) {

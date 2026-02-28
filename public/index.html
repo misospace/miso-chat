@@ -1652,6 +1652,55 @@
             }
         }
 
+        // SSE connection for real-time gateway events
+        let eventSource = null;
+        function connectEventSource() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.addEventListener('connected', (e) => {
+                console.log('📡 SSE connected');
+            });
+            
+            eventSource.addEventListener('typing.start', (e) => {
+                console.log('📡 typing.start received');
+                typingIndicator.classList.add('active');
+            });
+            
+            eventSource.addEventListener('typing.stop', (e) => {
+                console.log('📡 typing.stop received');
+                typingIndicator.classList.remove('active');
+            });
+            
+            eventSource.addEventListener('message.delta', (e) => {
+                console.log('📡 message.delta received');
+                // Handle streaming response chunks if needed
+            });
+            
+            eventSource.addEventListener('error', (e) => {
+                console.error('📡 Gateway error event:', e.data);
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data?.data?.message) {
+                        addMessage('system', `Gateway error: ${data.data.message}`);
+                    }
+                } catch (err) {}
+            });
+            
+            eventSource.addEventListener('connect.challenge', (e) => {
+                console.log('📡 connect.challenge received');
+                // Handle re-authentication if needed
+            });
+            
+            eventSource.onerror = (err) => {
+                console.warn('📡 SSE connection error, reconnecting...');
+                eventSource = null;
+                setTimeout(connectEventSource, 5000);
+            };
+        }
+
         async function loadSessions() {
             try {
                 const response = await fetch('/api/sessions');
@@ -1930,6 +1979,7 @@
             setOnlineState(false, 'Connecting...');
             await loadConfig();
             await loadSessions();
+            connectEventSource();
         })();
     </script>
 </body>
