@@ -596,8 +596,9 @@
         
         .emoji-picker {
             position: absolute;
-            bottom: 60px;
-            right: 10px;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -616,6 +617,14 @@
                 grid-template-columns: repeat(8, 1fr);
                 max-width: 280px;
                 max-height: 300px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .emoji-picker {
+                left: 50%;
+                transform: translateX(-50%);
+                right: auto;
             }
         }
 
