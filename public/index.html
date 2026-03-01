@@ -29,6 +29,16 @@
             --safe-area-top: env(safe-area-inset-top, 20px);
             --safe-area-bottom: env(safe-area-inset-bottom, 20px);
         }
+
+        body.light {
+            --bg-primary: #f5f5f7;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8ed;
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --border: #d2d2d7;
+            --shadow: 0 4px 24px rgba(0,0,0,0.1);
+        }
         
         * {
             margin: 0;
@@ -629,7 +639,6 @@
         }
         
         .emoji-picker {
-            background: #1a1d2e;
             bottom: 70px;
             right: 10px;
             background: var(--bg-secondary);
@@ -648,7 +657,6 @@
 
         @media (max-width: 767px) {
             .emoji-picker {
-            background: #1a1d2e;
                 position: fixed;
                 bottom: 70px;
                 left: 10px;
@@ -662,7 +670,6 @@
 
         @media (min-width: 768px) {
             .emoji-picker {
-            background: #1a1d2e;
                 grid-template-columns: repeat(8, 1fr);
                 max-width: 280px;
                 max-height: 300px;
@@ -671,7 +678,6 @@
 
         @media (max-width: 767px) {
             .emoji-picker {
-            background: #1a1d2e;
                 left: 50%;
                 transform: translateX(-50%);
                 right: auto;
@@ -1377,7 +1383,742 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const logoutBtn = document.getElementById('logoutBtn');
         const soundToggleBtn = document.getElementById('soundToggleBtn');
-        );
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const THEME_KEY = 'chat_theme_light';
+        let lightMode = localStorage.getItem(THEME_KEY) === '1';
+
+        function updateTheme() {
+            document.body.classList.toggle('light', lightMode);
+            themeToggleBtn.textContent = lightMode ? '☀️' : '🌙';
+            document.querySelector('meta[name="theme-color"]').setAttribute('content', lightMode ? '#f5f5f7' : '#1a1d2e');
+            themeToggleBtn.classList.toggle('active', lightMode);
+            localStorage.setItem(THEME_KEY, lightMode ? '1' : '0');
+        }
+
+        // Initialize theme on load
+        if (lightMode) document.body.classList.add('light');
+        updateTheme();
+
+        function updateSoundToggle() {
+            soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
+            soundToggleBtn.classList.toggle('active', soundEnabled);
+            soundToggleBtn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+            soundToggleBtn.title = soundEnabled ? 'Reply sound on' : 'Reply sound off';
+        }
+
+        function updateDocumentTitle() {
+            // Stop any existing blink
+            if (titleBlinkInterval) {
+                clearInterval(titleBlinkInterval);
+                titleBlinkInterval = null;
+                document.title = baseTitle;
+            }
+            
+            if (unreadNotifications > 0) {
+                document.title = `(${unreadNotifications}) ${baseTitle}`;
+                
+                // Add blinking effect for unread messages
+                let showNew = true;
+                titleBlinkInterval = setInterval(() => {
+                    document.title = showNew ? NEW_MESSAGE_TITLE : `(${unreadNotifications}) ${baseTitle}`;
+                    showNew = !showNew;
+                }, 2000);
+            } else {
+                document.title = baseTitle;
+            }
+        }
+
+        function clearUnreadNotifications() {
+            unreadNotifications = 0;
+            updateDocumentTitle();
+        }
+
+        function playNotificationTone() {
+            if (!soundEnabled) return;
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                const context = new AudioCtx();
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 880;
+                gain.gain.value = 0.001;
+
+                oscillator.connect(gain);
+                gain.connect(context.destination);
+
+                const now = context.currentTime;
+                // Louder volume: ramp to 0.5 (50% instead of 8%)
+                gain.gain.exponentialRampToValueAtTime(0.5, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+                oscillator.start(now);
+                oscillator.stop(now + 0.18);
+                oscillator.onended = () => context.close();
+            } catch (error) {
+                console.warn('Notification tone failed:', error);
+            }
+        }
+
+        function notifyAssistantReply() {
+            if (!document.hidden) return;
+            unreadNotifications += 1;
+            updateDocumentTitle();
+            playNotificationTone();
+        }
+
+        function setOnlineState(online, text = null) {
+            statusDot.classList.toggle('connected', !!online);
+            statusText.textContent = text || (online ? 'Online' : 'Offline');
+            messageInput.disabled = !online;
+            sendBtn.disabled = !online;
+        }
+
+        function buildSessionLabel(session) {
+            const key = session.sessionKey || '';
+            const shortKey = key.slice(0, 8);
+            const title = session.title || session.displayName || (key.startsWith('agent:') ? `Agent: ${key.split(':')[1]?.charAt(0).toUpperCase() + key.split(':')[1]?.slice(1)}` : session.channel) || session.kind || 'session';
+            return `${title} · ${shortKey}`;
+        }
+
+        function resolvePreferredSession(sessions) {
+            const list = Array.isArray(sessions) ? sessions.filter((s) => s?.sessionKey) : [];
+            if (list.length === 0) return { selected: null, notice: '' };
+
+            const keys = new Set(list.map((s) => s.sessionKey));
+            const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+            const candidates = [currentSessionKey, stored, defaultSessionKey, list[0].sessionKey].filter(Boolean);
+            const preferredKey = candidates.find((key) => keys.has(key)) || list[0].sessionKey;
+            const selected = list.find((s) => s.sessionKey === preferredKey) || list[0];
+
+            let notice = '';
+            if (currentSessionKey && !keys.has(currentSessionKey)) {
+                notice = 'Previous session is unavailable, switched to an active session.';
+            } else if (stored && !keys.has(stored)) {
+                localStorage.removeItem(SESSION_STORAGE_KEY);
+                notice = 'Saved session is unavailable, switched to an active session.';
+            }
+
+            return { selected, notice };
+        }
+
+        function historyMessageKey(message, index) {
+            const role = message?.role === 'user' ? 'user' : 'assistant';
+            const timestamp = message?.timestamp || `idx:${index}`;
+            const content = String(message?.content || '');
+            return `${timestamp}|${role}|${content}`;
+        }
+
+        function queueStatusText(sessionKey) {
+            const queued = queueCountForSession(sessionKey);
+            return queued > 0 ? `Online · queue ${queued}` : 'Online';
+        }
+
+        function rememberLocalAssistantEcho(content) {
+            const key = String(content || '').trim();
+            if (!key) return;
+            const now = Date.now();
+            const prev = localAssistantEchoes.get(key);
+            localAssistantEchoes.set(key, {
+                count: (prev?.count || 0) + 1,
+                expiresAt: now + 30000,
+            });
+        }
+
+        function consumeLocalAssistantEcho(content) {
+            const key = String(content || '').trim();
+            if (!key) return false;
+            const now = Date.now();
+            const entry = localAssistantEchoes.get(key);
+            if (!entry || entry.expiresAt < now || entry.count <= 0) {
+                localAssistantEchoes.delete(key);
+                return false;
+            }
+
+            if (entry.count <= 1) {
+                localAssistantEchoes.delete(key);
+            } else {
+                localAssistantEchoes.set(key, {
+                    count: entry.count - 1,
+                    expiresAt: entry.expiresAt,
+                });
+            }
+            return true;
+        }
+
+        async function fetchHistoryMessages(sessionKey) {
+            const response = await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/history`);
+            const data = await response.json();
+            return Array.isArray(data?.messages) ? data.messages : [];
+        }
+
+        function stopHistoryPolling() {
+            if (historyPollTimer) {
+                clearInterval(historyPollTimer);
+                historyPollTimer = null;
+            }
+            historyPollInFlight = false;
+        }
+
+        function startHistoryPolling() {
+            stopHistoryPolling();
+            historyPollTimer = setInterval(() => {
+                pollSessionHistory();
+            }, HISTORY_POLL_INTERVAL_MS);
+        }
+
+        async function pollSessionHistory() {
+            if (!currentSessionKey || historyPollInFlight) return;
+
+            const sessionKey = currentSessionKey;
+            historyPollInFlight = true;
+
+            try {
+                const messages = await fetchHistoryMessages(sessionKey);
+                if (sessionKey !== currentSessionKey) return;
+
+                if (!Array.isArray(messages)) return;
+
+                const anyOverlap = messages.some((msg, index) => historyMessageKeys.has(historyMessageKey(msg, index)));
+                const likelyReset = messages.length < historyMessageKeys.size && !anyOverlap;
+
+                if (likelyReset) {
+                    renderHistory(messages);
+                    renderPendingForSession(sessionKey);
+                    setOnlineState(true, queueStatusText(sessionKey));
+                    return;
+                }
+
+                messages.forEach((msg, index) => {
+                    const key = historyMessageKey(msg, index);
+                    if (historyMessageKeys.has(key)) return;
+
+                    historyMessageKeys.add(key);
+
+                    const sender = msg.role === 'user' ? 'user' : 'miso';
+                    if (sender === 'user') return;
+
+                    if (consumeLocalAssistantEcho(msg.content)) return;
+
+                    // Include content snippet to ensure unique reaction keys even with duplicate timestamps
+                    const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
+                    addMessage(sender, msg.content, {
+                        reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
+                        toolCalls: msg.toolCalls,
+                    });
+                });
+            } catch (error) {
+                console.warn('History poll error:', error);
+            } finally {
+                historyPollInFlight = false;
+            }
+        }
+
+        function addMessage(sender, content, options = {}) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+
+            if (sender === 'miso') {
+                const avatar = document.createElement('img');
+                avatar.className = 'message-avatar';
+                avatar.src = '/favicon-32x32.png';
+                avatar.alt = 'Miso avatar';
+                avatar.loading = 'lazy';
+                avatar.decoding = 'async';
+                div.appendChild(avatar);
+            }
+
+            const contentWrap = document.createElement('div');
+            contentWrap.className = 'message-content';
+
+            const text = typeof content === 'string' ? content : (content?.text ?? content?.content ?? '');
+            const toolCalls = options.toolCalls || (typeof content === 'object' && content !== null ? content.toolCalls : null) || [];
+            const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+            const hasText = String(text || '').trim().length > 0;
+
+            if (hasText || (sender === 'miso' && hasToolCalls)) {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                renderBubbleContent(bubble, hasText ? text : 'Used tools.');
+                bubble.addEventListener('click', (event) => {
+                    const btn = event.target.closest('.copy-code-btn');
+                    if (!btn) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    copyCodeFromButton(btn);
+                });
+                contentWrap.appendChild(bubble);
+            }
+
+            if (hasToolCalls) {
+                toolCalls.forEach((tc) => {
+                    contentWrap.appendChild(renderToolCallBlock(tc));
+                });
+            }
+
+            const shouldShowReactions = sender !== 'system';
+            if (shouldShowReactions) {
+                const key = reactionKey(sender, hasText ? text : (hasToolCalls ? 'toolCalls:' + toolCalls.length : ''), options.reactionKeyHint || options.messageId || '');
+                const row = document.createElement('div');
+                row.className = 'reaction-row';
+
+                REACTION_OPTIONS.forEach((emoji) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'reaction-btn';
+                    btn.setAttribute('aria-label', `React with ${emoji}`);
+                    btn.setAttribute('aria-pressed', 'false');
+
+                    // Get count for this emoji (new format: messageReactions[key] is an object)
+                    const reactionsForKey = messageReactions[key] || {};
+                    const count = reactionsForKey[emoji] || 0;
+                    const hasReaction = count > 0;
+
+                    // Create emoji span
+                    const emojiSpan = document.createElement('span');
+                    emojiSpan.textContent = emoji;
+                    btn.appendChild(emojiSpan);
+
+                    // Add count if there are reactions
+                    if (hasReaction) {
+                        const countSpan = document.createElement('span');
+                        countSpan.className = 'reaction-count';
+                        countSpan.textContent = count;
+                        btn.appendChild(countSpan);
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-pressed', 'true');
+                    }
+
+                    btn.addEventListener('click', () => {
+                        // Ensure we have an object for this key
+                        if (!messageReactions[key]) {
+                            messageReactions[key] = {};
+                        }
+                        const currentCount = messageReactions[key][emoji] || 0;
+
+                        if (currentCount > 0) {
+                            // Remove reaction (decrement)
+                            if (currentCount <= 1) {
+                                delete messageReactions[key][emoji];
+                            } else {
+                                messageReactions[key][emoji] = currentCount - 1;
+                            }
+                        } else {
+                            // Add reaction (increment)
+                            messageReactions[key][emoji] = currentCount + 1;
+                        }
+
+                        // Clean up empty objects
+                        if (Object.keys(messageReactions[key]).length === 0) {
+                            delete messageReactions[key];
+                        }
+
+                        saveReactions(messageReactions);
+
+                        // Update all buttons in this row
+                        row.querySelectorAll('.reaction-btn').forEach((node) => {
+                            const nodeEmoji = node.querySelector('span:first-child').textContent;
+                            const nodeCount = messageReactions[key]?.[nodeEmoji] || 0;
+                            const nodeHasReaction = nodeCount > 0;
+
+                            node.classList.toggle('active', nodeHasReaction);
+                            node.setAttribute('aria-pressed', nodeHasReaction ? 'true' : 'false');
+
+                            // Update or add/remove count span
+                            let countSpan = node.querySelector('.reaction-count');
+                            if (nodeCount > 0) {
+                                if (!countSpan) {
+                                    countSpan = document.createElement('span');
+                                    countSpan.className = 'reaction-count';
+                                    node.appendChild(countSpan);
+                                }
+                                countSpan.textContent = nodeCount;
+                            } else if (countSpan) {
+                                countSpan.remove();
+                            }
+                        });
+                    });
+
+                    row.appendChild(btn);
+                });
+
+                contentWrap.appendChild(row);
+            }
+
+            div.appendChild(contentWrap);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            if (sender === 'miso' && !options.suppressNotify) {
+                notifyAssistantReply();
+            }
+        }
+
+        function renderHistory(messages) {
+            messagesDiv.innerHTML = '';
+            historyMessageKeys = new Set();
+
+            if (!Array.isArray(messages) || messages.length === 0) {
+                addMessage('system', '📝 New session');
+                return;
+            }
+
+            messages.forEach((msg, index) => {
+                historyMessageKeys.add(historyMessageKey(msg, index));
+                // Include content snippet to ensure unique reaction keys even with duplicate timestamps
+                const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
+                addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
+                    reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
+                    suppressNotify: true,
+                    toolCalls: msg.toolCalls,
+                });
+            });
+        }
+
+        function renderPendingForSession(sessionKey) {
+            const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
+            pending.forEach((item) => {
+                addMessage('user', `${item.message} ⏳`, { reactionKeyHint: `queued:${item.id}` });
+            });
+            if (pending.length > 0) {
+                addMessage('system', `${pending.length} queued message${pending.length > 1 ? 's' : ''} will retry.`);
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const cfg = await response.json();
+                if (cfg?.assistantName) {
+                    assistantNameEl.textContent = cfg.assistantName;
+                    messageInput.placeholder = `Message ${cfg.assistantName}...`;
+                }
+                if (cfg?.title) {
+                    baseTitle = cfg.title;
+                    updateDocumentTitle();
+                }
+                if (cfg?.defaultSessionKey) defaultSessionKey = cfg.defaultSessionKey;
+            } catch (error) {
+                console.warn('Config load failed:', error);
+            }
+        }
+
+        // SSE connection for real-time gateway events
+        let eventSource = null;
+        function connectEventSource() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            eventSource = new EventSource('/api/events');
+            
+            eventSource.addEventListener('connected', (e) => {
+                console.log('📡 SSE connected');
+            });
+            
+            eventSource.addEventListener('typing.start', (e) => {
+                console.log('📡 typing.start received');
+                typingIndicator.classList.add('active');
+            });
+            
+            eventSource.addEventListener('typing.stop', (e) => {
+                console.log('📡 typing.stop received');
+                typingIndicator.classList.remove('active');
+            });
+            
+            eventSource.addEventListener('message.delta', (e) => {
+                console.log('📡 message.delta received');
+                // Handle streaming response chunks if needed
+            });
+            
+            eventSource.addEventListener('error', (e) => {
+                console.error('📡 Gateway error event:', e.data);
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data?.data?.message) {
+                        addMessage('system', `Gateway error: ${data.data.message}`);
+                    }
+                } catch (err) {}
+            });
+            
+            eventSource.addEventListener('connect.challenge', (e) => {
+                console.log('📡 connect.challenge received');
+                // Handle re-authentication if needed
+            });
+            
+            eventSource.onerror = (err) => {
+                console.warn('📡 SSE connection error, reconnecting...');
+                eventSource = null;
+                setTimeout(connectEventSource, 5000);
+            };
+        }
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+
+                if (data.defaultSessionKey) defaultSessionKey = data.defaultSessionKey;
+
+                sessionSelect.innerHTML = '<option value="">Select session...</option>';
+
+                sessions.forEach((session) => {
+                    const option = document.createElement('option');
+                    option.value = session.sessionKey;
+                    option.textContent = buildSessionLabel(session);
+                    sessionSelect.appendChild(option);
+                });
+
+                if (sessions.length === 0) {
+                    stopHistoryPolling();
+                    setOnlineState(false, 'No sessions');
+                    return;
+                }
+
+                const { selected, notice } = resolvePreferredSession(sessions);
+                if (!selected?.sessionKey) {
+                    setOnlineState(false, 'No sessions');
+                    return;
+                }
+
+                await selectSession(selected.sessionKey, { notice });
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                stopHistoryPolling();
+                sessionSelect.innerHTML = '<option value="">Error</option>';
+                setOnlineState(false, 'Session load failed');
+            }
+        }
+
+        async function selectSession(sessionKey, options = {}) {
+            if (!sessionKey) return;
+
+            currentSessionKey = sessionKey;
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
+            sessionSelect.value = sessionKey;
+            setOnlineState(true, 'Loading history...');
+
+            try {
+                const messages = await fetchHistoryMessages(sessionKey);
+                renderHistory(messages);
+                renderPendingForSession(sessionKey);
+                if (options.notice) addMessage('system', options.notice);
+                setOnlineState(true, queueStatusText(sessionKey));
+                startHistoryPolling();
+                processQueue();
+            } catch (error) {
+                console.error('History load error:', error);
+                renderHistory([]);
+                renderPendingForSession(sessionKey);
+                if (options.notice) addMessage('system', options.notice);
+                setOnlineState(true, queueStatusText(sessionKey));
+                startHistoryPolling();
+                processQueue();
+            }
+        }
+
+        async function processQueue() {
+            if (sending || sendQueue.length === 0) return;
+            if (!currentSessionKey) return;
+
+            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === currentSessionKey);
+            if (nextIndex < 0) return;
+
+            sending = true;
+            const [next] = sendQueue.splice(nextIndex, 1);
+            savePendingQueue(sendQueue);
+
+            setOnlineState(true, queueStatusText(currentSessionKey));
+
+            typingIndicator.classList.add('active');
+            try {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: next.message }),
+                });
+                const data = await response.json();
+
+                if (!data?.success) {
+                    addMessage('system', data?.error || 'Send failed');
+                } else {
+                    const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
+                    const text = hasSanitizedResponse
+                        ? data.responseText
+                        : (data.response?.text || data.response?.message);
+                    const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                    if ((text && text.trim()) || toolCalls.length > 0) {
+                        if (text && text.trim()) rememberLocalAssistantEcho(text);
+                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
+                    }
+                    
+                    // Remove typing indicator after getting response
+                    typingIndicator.classList.remove('active');
+                }
+            } catch (error) {
+                console.error('Send error:', error);
+                addMessage('system', `Send failed: ${error.message}`);
+                sendQueue.unshift(next);
+                savePendingQueue(sendQueue);
+                typingIndicator.classList.remove('active');
+            } finally {
+                sending = false;
+                const remaining = queueCountForSession(currentSessionKey);
+                setOnlineState(true, queueStatusText(currentSessionKey));
+                if (remaining > 0) processQueue();
+            }
+        }
+
+        // Slash command handler
+        function handleSlashCommand(cmd) {
+            const command = cmd.slice(1).trim().toLowerCase();
+            
+            switch (command) {
+                case 'help':
+                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show connection status\n- /stop - Stop current queue processing');
+                    break;
+                case 'clear':
+                    clearChatDisplay();
+                    addMessage('system', 'Chat cleared.');
+                    break;
+                case 'status':
+                    const queueCount = sendQueue.filter(item => !item.sessionKey || item.sessionKey === currentSessionKey).length;
+                    addMessage('system', `Status: Online\nQueue: ${queueCount} message(s)\nSession: ${currentSessionKey || 'None'}`);
+                    break;
+                case 'stop':
+                    sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
+                    savePendingQueue(sendQueue);
+                    addMessage('system', 'Queue cleared for this session.');
+                    break;
+                default:
+                    addMessage('system', `Unknown command: /${command}\nType /help for available commands.`);
+            }
+        }
+
+        function clearChatDisplay() {
+            const messagesContainer = document.getElementById('messages');
+            if (messagesContainer) {
+                messagesContainer.innerHTML = '';
+            }
+        }
+
+        function sendMessage(text = null) {
+            const raw = text ?? messageInput.value ?? '';
+            const messageText = String(raw).trim();
+            if (!messageText) return;
+            
+            // Handle slash commands immediately (bypass queue)
+            if (messageText.startsWith('/')) {
+                handleSlashCommand(messageText);
+                messageInput.value = '';
+                resizeMessageInput();
+                return;
+            }
+            
+            if (!currentSessionKey) {
+                addMessage('system', 'Select a session first.');
+                return;
+            }
+
+            const queuedId = queueId();
+            addMessage('user', messageText, { reactionKeyHint: `queued:${queuedId}` });
+            messageInput.value = '';
+            resizeMessageInput();
+            messageInput.focus();
+            sendQueue.push({
+                id: queuedId,
+                sessionKey: currentSessionKey,
+                message: messageText,
+                createdAt: Date.now(),
+            });
+            savePendingQueue(sendQueue);
+            processQueue();
+        }
+
+        async function refreshCurrentSession() {
+            if (currentSessionKey) {
+                await selectSession(currentSessionKey);
+            } else {
+                await loadSessions();
+            }
+        }
+
+        async function logout() {
+            // Stop all polling first
+            stopHistoryPolling();
+            
+            // Clear all localStorage to prevent any session restoration
+            try {
+                localStorage.clear();
+            } catch (e) {
+                console.warn('localStorage clear failed:', e);
+            }
+            
+            // Destroy session on server
+            try {
+                await fetch('/logout', { method: 'POST', credentials: 'include' });
+            } catch (e) {
+                console.warn('Logout fetch failed:', e);
+            }
+            
+            // Force hard redirect to clear all state
+            window.location.replace('/login');
+        }
+
+        function resizeMessageInput() {
+            messageInput.style.height = 'auto';
+            const nextHeight = Math.min(messageInput.scrollHeight, 180);
+            messageInput.style.height = `${Math.max(nextHeight, 52)}px`;
+        }
+
+        // Emoji picker
+        const emojiPicker = document.createElement('div');
+        emojiPicker.className = 'emoji-picker';
+        const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😗','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐','🖖','👋','🤏','✍️','🙏','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁','👅','👄','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','🔥','⭐','🌟','✨','💫','💥','💢','💦','💨','🕐','🕑','🕒','🕓','🕔','🕕','🕖','🕗','🕘','🕙','🕚','🕛','✅','❌','❓','❗','💯','🔔','🔕','🔇','🔈','🔉','🔊','📢','📣','💬','💭','🗯','♠️','♣️','♥️','♦️','🎉','🎊','🎁','🏆','🥇','🥈','🥉','⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚴','🚵','🎖️','🎗️','💻','🖥️','🖨️','⌨️','🖱️','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📗','📘','📙','📚','📖','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓'];
+        
+        for (const emoji of emojis) {
+            const btn = document.createElement('button');
+            btn.textContent = emoji;
+            btn.onclick = () => insertEmoji(emoji);
+            emojiPicker.appendChild(btn);
+        }
+        
+        document.querySelector('.input-wrapper').appendChild(emojiPicker);
+        
+        function insertEmoji(emoji) {
+            const start = messageInput.selectionStart;
+            const end = messageInput.selectionEnd;
+            const text = messageInput.value;
+            messageInput.value = text.slice(0, start) + emoji + text.slice(end);
+            messageInput.selectionStart = messageInput.selectionEnd = start + emoji.length;
+            messageInput.focus();
+            emojiPicker.classList.remove('open');
+        }
+        
+        const emojiBtn = document.getElementById('emojiBtn');
+        emojiBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            emojiPicker.classList.toggle('open');
+        });
+        
+        document.addEventListener('click', () => emojiPicker.classList.remove('open'));
+        
+        messageInput.addEventListener('input', resizeMessageInput);
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            sendMessage();
+        });
+
+        refreshBtn.addEventListener('click', refreshCurrentSession);
+        logoutBtn.addEventListener('click', logout);
+        sendBtn.addEventListener('click', () => sendMessage());
+        themeToggleBtn.addEventListener('click', () => {
+            lightMode = !lightMode;
+            updateTheme();
+        });
 
         soundToggleBtn.addEventListener('click', () => {
             soundEnabled = !soundEnabled;
