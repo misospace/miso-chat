@@ -40,6 +40,18 @@
             --shadow: 0 4px 24px rgba(0,0,0,0.1);
         }
         
+        [data-theme="light"] {
+            --bg-primary: #f5f5f7;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8ed;
+            --accent: #e94560;
+            --accent-gradient: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --border: #d2d2d7;
+            --shadow: 0 4px 24px rgba(0,0,0,0.1);
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -810,6 +822,7 @@
             </div>
         </div>
         <div class="header-controls">
+            <button class="icon-btn" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
             <button class="icon-btn" id="themeToggleBtn" title="Toggle light mode" aria-label="Toggle light mode">🌙</button>
             <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
@@ -858,6 +871,7 @@
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
         const HISTORY_POLL_INTERVAL_MS = 5000;
+        const THEME_STORAGE_KEY = 'miso.theme.v1';
 
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
@@ -1384,26 +1398,39 @@
         const logoutBtn = document.getElementById('logoutBtn');
         const soundToggleBtn = document.getElementById('soundToggleBtn');
         const themeToggleBtn = document.getElementById('themeToggleBtn');
-        const THEME_KEY = 'chat_theme_light';
-        let lightMode = localStorage.getItem(THEME_KEY) === '1';
+        const THEME_STORAGE_KEY = 'miso.theme.v1';
 
-        function updateTheme() {
-            document.body.classList.toggle('light', lightMode);
-            themeToggleBtn.textContent = lightMode ? '☀️' : '🌙';
-            document.querySelector('meta[name="theme-color"]').setAttribute('content', lightMode ? '#f5f5f7' : '#1a1d2e');
-            themeToggleBtn.classList.toggle('active', lightMode);
-            localStorage.setItem(THEME_KEY, lightMode ? '1' : '0');
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme === 'dark' ? '' : newTheme);
+            localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+            themeToggleBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
+            if (savedTheme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+                themeToggleBtn.textContent = '☀️';
+            } else {
+                themeToggleBtn.textContent = '🌙';
+            }
         }
 
         // Initialize theme on load
-        if (lightMode) document.body.classList.add('light');
-        updateTheme();
+        initTheme();
 
         function updateSoundToggle() {
             soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
             soundToggleBtn.classList.toggle('active', soundEnabled);
             soundToggleBtn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
             soundToggleBtn.title = soundEnabled ? 'Reply sound on' : 'Reply sound off';
+        }
+
+        function updateThemeToggle() {
+            const theme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
+            themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
         }
 
         function updateDocumentTitle() {
@@ -2110,6 +2137,7 @@
         });
 
         refreshBtn.addEventListener('click', refreshCurrentSession);
+        themeToggleBtn.addEventListener('click', toggleTheme);
         logoutBtn.addEventListener('click', logout);
         sendBtn.addEventListener('click', () => sendMessage());
         themeToggleBtn.addEventListener('click', () => {
@@ -2129,6 +2157,7 @@
         window.addEventListener('focus', clearUnreadNotifications);
 
         (async () => {
+            initTheme();
             updateSoundToggle();
             resizeMessageInput();
             setOnlineState(false, 'Connecting...');
