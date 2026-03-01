@@ -1480,7 +1480,7 @@
         function buildSessionLabel(session) {
             const key = session.sessionKey || '';
             const shortKey = key.slice(0, 8);
-            const title = session.title || session.displayName || session.channel || session.kind || 'session';
+            const title = session.title || session.displayName || (key.startsWith('agent:') ? `Agent: ${key.split(':')[1]?.charAt(0).toUpperCase() + key.split(':')[1]?.slice(1)}` : session.channel) || session.kind || 'session';
             return `${title} · ${shortKey}`;
         }
 
