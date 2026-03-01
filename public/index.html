@@ -811,7 +811,6 @@
         </div>
         <div class="header-controls">
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
-            <button class="icon-btn" id="themeToggleBtn" title="Toggle light mode" aria-label="Toggle light mode">🌙</button>
             <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="">Loading sessions...</option>
@@ -2112,11 +2111,6 @@
         refreshBtn.addEventListener('click', refreshCurrentSession);
         logoutBtn.addEventListener('click', logout);
         sendBtn.addEventListener('click', () => sendMessage());
-        themeToggleBtn.addEventListener('click', () => {
-            lightMode = !lightMode;
-            updateTheme();
-        });
-
         soundToggleBtn.addEventListener('click', () => {
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
