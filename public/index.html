@@ -1510,8 +1510,10 @@
 
                     if (consumeLocalAssistantEcho(msg.content)) return;
 
+                    // Include content snippet to ensure unique reaction keys even with duplicate timestamps
+                    const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
                     addMessage(sender, msg.content, {
-                        reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                        reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
                         toolCalls: msg.toolCalls,
                     });
                 });
@@ -1625,8 +1627,10 @@
 
             messages.forEach((msg, index) => {
                 historyMessageKeys.add(historyMessageKey(msg, index));
+                // Include content snippet to ensure unique reaction keys even with duplicate timestamps
+                const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
                 addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
-                    reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                    reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
                     suppressNotify: true,
                     toolCalls: msg.toolCalls,
                 });
