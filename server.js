@@ -856,6 +856,10 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
     const result = await gatewayInvoke('sessions_history', { sessionKey, limit: 100 });
     const payload = unwrapToolResult(result);
     const raw = payload?.history || payload?.messages || [];
+
+    // Get reactions for this session (grouped by message_id)
+    const sessionReactions = reactions.getForSession(sessionKey);
+
     const messages = raw
       .map((m) => {
         const role = m.role || 'assistant';
@@ -888,11 +892,26 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
         const hasToolCalls = toolCalls.length > 0;
         if (!hasContent && !hasToolCalls) return null;
 
+        // Get reaction counts for this message (match by timestamp prefix)
+        const timestamp = m.timestamp;
+        const messageReactions = [];
+        if (timestamp && sessionReactions) {
+          // Look for reactions with timestamp prefix (format: history:timestamp:role:...)
+          for (const [msgId, emojis] of Object.entries(sessionReactions)) {
+            if (msgId.startsWith(`history:${timestamp}:`) || msgId.startsWith(`reply:${timestamp}:`) || msgId.startsWith(`queued:${timestamp}`)) {
+              for (const [emoji, users] of Object.entries(emojis)) {
+                messageReactions.push({ emoji, count: users.length });
+              }
+            }
+          }
+        }
+
         return {
           role,
           content: hasContent ? text : (hasToolCalls ? ' ' : ''),
           timestamp: m.timestamp,
           ...(hasToolCalls ? { toolCalls } : {}),
+          ...(messageReactions.length > 0 ? { reactions: messageReactions } : {}),
         };
       })
       .filter(Boolean);
