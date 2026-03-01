@@ -29,6 +29,16 @@
             --safe-area-top: env(safe-area-inset-top, 20px);
             --safe-area-bottom: env(safe-area-inset-bottom, 20px);
         }
+
+        body.light {
+            --bg-primary: #f5f5f7;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8ed;
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --border: #d2d2d7;
+            --shadow: 0 4px 24px rgba(0,0,0,0.1);
+        }
         
         * {
             margin: 0;
@@ -802,6 +812,7 @@
         </div>
         <div class="header-controls">
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
+            <button class="icon-btn" id="themeToggleBtn" title="Toggle light mode" aria-label="Toggle light mode">🌙</button>
             <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="">Loading sessions...</option>
@@ -1373,6 +1384,21 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const logoutBtn = document.getElementById('logoutBtn');
         const soundToggleBtn = document.getElementById('soundToggleBtn');
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const THEME_KEY = 'chat_theme_light';
+        let lightMode = localStorage.getItem(THEME_KEY) === '1';
+
+        function updateTheme() {
+            document.body.classList.toggle('light', lightMode);
+            themeToggleBtn.textContent = lightMode ? '☀️' : '🌙';
+            document.querySelector('meta[name="theme-color"]').setAttribute('content', lightMode ? '#f5f5f7' : '#1a1d2e');
+            themeToggleBtn.classList.toggle('active', lightMode);
+            localStorage.setItem(THEME_KEY, lightMode ? '1' : '0');
+        }
+
+        // Initialize theme on load
+        if (lightMode) document.body.classList.add('light');
+        updateTheme();
 
         function updateSoundToggle() {
             soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
@@ -2090,6 +2116,11 @@
         refreshBtn.addEventListener('click', refreshCurrentSession);
         logoutBtn.addEventListener('click', logout);
         sendBtn.addEventListener('click', () => sendMessage());
+        themeToggleBtn.addEventListener('click', () => {
+            lightMode = !lightMode;
+            updateTheme();
+        });
+
         soundToggleBtn.addEventListener('click', () => {
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
