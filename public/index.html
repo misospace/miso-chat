@@ -295,12 +295,28 @@
             padding: 4px 8px;
             cursor: pointer;
             opacity: 0.85;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 32px;
+            justify-content: center;
         }
 
         .reaction-btn.active {
             border-color: rgba(233, 69, 96, 0.8);
             box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.25);
             opacity: 1;
+            background: rgba(233, 69, 96, 0.15);
+        }
+
+        .reaction-count {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .reaction-btn.active .reaction-count {
+            color: var(--accent);
         }
 
         .code-inline {
@@ -1308,7 +1324,19 @@
             try {
                 const stored = localStorage.getItem(REACTION_STORAGE_KEY);
                 const parsed = stored ? JSON.parse(stored) : {};
-                return parsed && typeof parsed === 'object' ? parsed : {};
+                if (!parsed || typeof parsed !== 'object') return {};
+                // Migrate from old format (string emoji) to new format (counts object)
+                const result = {};
+                for (const [key, value] of Object.entries(parsed)) {
+                    if (typeof value === 'string') {
+                        // Old format: single emoji string
+                        result[key] = { [value]: 1 };
+                    } else if (value && typeof value === 'object') {
+                        // New format: already an object with counts
+                        result[key] = value;
+                    }
+                }
+                return result;
             } catch {
                 return {};
             }
@@ -1615,28 +1643,76 @@
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'reaction-btn';
-                    btn.textContent = emoji;
                     btn.setAttribute('aria-label', `React with ${emoji}`);
                     btn.setAttribute('aria-pressed', 'false');
 
-                    const selected = messageReactions[key] === emoji;
-                    if (selected) {
+                    // Get count for this emoji (new format: messageReactions[key] is an object)
+                    const reactionsForKey = messageReactions[key] || {};
+                    const count = reactionsForKey[emoji] || 0;
+                    const hasReaction = count > 0;
+
+                    // Create emoji span
+                    const emojiSpan = document.createElement('span');
+                    emojiSpan.textContent = emoji;
+                    btn.appendChild(emojiSpan);
+
+                    // Add count if there are reactions
+                    if (hasReaction) {
+                        const countSpan = document.createElement('span');
+                        countSpan.className = 'reaction-count';
+                        countSpan.textContent = count;
+                        btn.appendChild(countSpan);
                         btn.classList.add('active');
                         btn.setAttribute('aria-pressed', 'true');
                     }
 
                     btn.addEventListener('click', () => {
-                        const currentlySelected = messageReactions[key] === emoji;
-                        if (currentlySelected) {
-                            delete messageReactions[key];
-                        } else {
-                            messageReactions[key] = emoji;
+                        // Ensure we have an object for this key
+                        if (!messageReactions[key]) {
+                            messageReactions[key] = {};
                         }
+                        const currentCount = messageReactions[key][emoji] || 0;
+
+                        if (currentCount > 0) {
+                            // Remove reaction (decrement)
+                            if (currentCount <= 1) {
+                                delete messageReactions[key][emoji];
+                            } else {
+                                messageReactions[key][emoji] = currentCount - 1;
+                            }
+                        } else {
+                            // Add reaction (increment)
+                            messageReactions[key][emoji] = currentCount + 1;
+                        }
+
+                        // Clean up empty objects
+                        if (Object.keys(messageReactions[key]).length === 0) {
+                            delete messageReactions[key];
+                        }
+
                         saveReactions(messageReactions);
+
+                        // Update all buttons in this row
                         row.querySelectorAll('.reaction-btn').forEach((node) => {
-                            const active = messageReactions[key] === node.textContent;
-                            node.classList.toggle('active', active);
-                            node.setAttribute('aria-pressed', active ? 'true' : 'false');
+                            const nodeEmoji = node.querySelector('span:first-child').textContent;
+                            const nodeCount = messageReactions[key]?.[nodeEmoji] || 0;
+                            const nodeHasReaction = nodeCount > 0;
+
+                            node.classList.toggle('active', nodeHasReaction);
+                            node.setAttribute('aria-pressed', nodeHasReaction ? 'true' : 'false');
+
+                            // Update or add/remove count span
+                            let countSpan = node.querySelector('.reaction-count');
+                            if (nodeCount > 0) {
+                                if (!countSpan) {
+                                    countSpan = document.createElement('span');
+                                    countSpan.className = 'reaction-count';
+                                    node.appendChild(countSpan);
+                                }
+                                countSpan.textContent = nodeCount;
+                            } else if (countSpan) {
+                                countSpan.remove();
+                            }
                         });
                     });
 
