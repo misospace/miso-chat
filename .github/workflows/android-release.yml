@@ -14,6 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -29,24 +34,10 @@ jobs:
       - name: Build Android APK (Debug)
         run: npx cap sync android && npx cap build android
         
-      - name: Build Android APK (Release)
-        run: |
-          cd android
-          ./gradlew assembleRelease
-          
       - name: Upload Release Asset (Debug)
         uses: softprops/action-gh-release@v1
         with:
           files: android/app/build/outputs/apk/debug/*.apk
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Upload Release Asset (Release)
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: android/app/build/outputs/apk/release/*.apk
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
