@@ -32,19 +32,14 @@ jobs:
         run: npm ci
         
       - name: Build Debug APK
-        run: npx cap sync android && npx cap build android
+        run: |
+          npx cap sync android
+          cd android
+          ./gradlew assembleDebug
         
-      - name: Upload to Release
-        if: github.event_name == 'release'
+      - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           files: android/app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Upload Artifacts
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: miso-chat-debug.apk
-          path: android/app/build/outputs/apk/debug/*.apk
