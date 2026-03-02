@@ -21,6 +21,7 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "passport-openidconnect": "^0.1.2",
+    "cors": "^2.8.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {

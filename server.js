@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const rateLimit = require('express-rate-limit');
+const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,14 @@ const sseClients = new Set();
 
 // Trust proxy for rate limiting behind Envoy
 app.set('trust proxy', 1);
+// Enable CORS for frontend connection
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || true,
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+app.use(cors(corsOptions));
 
 // Apply security middleware
 securityMiddleware.forEach(middleware => app.use(middleware));
