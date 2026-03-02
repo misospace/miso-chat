@@ -1575,9 +1575,18 @@
         }
 
         async function fetchHistoryMessages(sessionKey) {
-            const response = await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/history`);
-            const data = await response.json();
-            return Array.isArray(data?.messages) ? data.messages : [];
+            try {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/history`);
+                if (!response.ok) {
+                    console.error('Failed to fetch history:', response.status, response.statusText);
+                    return [];
+                }
+                const data = await response.json();
+                return Array.isArray(data?.messages) ? data.messages : [];
+            } catch (err) {
+                console.error('Error fetching history:', err);
+                return [];
+            }
         }
 
         function stopHistoryPolling() {
