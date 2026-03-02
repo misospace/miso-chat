@@ -34,13 +34,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
         
-      - name: Build Android APK (Debug)
-        run: npx cap sync android && npx cap build android
+      - name: Sync Capacitor
+        run: npx cap sync android
         
-      - name: Upload Release Asset (Debug)
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+        
+      - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           files: android/app/build/outputs/apk/debug/*.apk
-          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
