@@ -7,7 +7,10 @@
     "start": "node server.js",
     "lint": "node --check server.js",
     "test": "node --check server.js",
-    "test:ci": "node --check server.js && echo '{}' > test-results.json"
+    "test:ci": "node --check server.js && echo '{}' > test-results.json",
+    "android:sync": "npx cap sync android",
+    "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:run": "npx cap sync android && npx cap run android"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",

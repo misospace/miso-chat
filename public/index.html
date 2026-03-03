@@ -82,6 +82,8 @@
             gap: 12px;
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
+            position: relative;
+            z-index: 50;
             -webkit-backdrop-filter: blur(20px);
             backdrop-filter: blur(20px);
         }
@@ -92,9 +94,9 @@
             border-radius: 50%;
             overflow: hidden;
             background: var(--bg-tertiary);
-            box-shadow: 0 2px 12px rgba(233, 69, 96, 0.25);
             display: grid;
             place-items: center;
+            box-shadow: 0 2px 12px rgba(233, 69, 96, 0.25);
         }
 
         .avatar img {
@@ -179,6 +181,47 @@
             box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
             background: rgba(233, 69, 96, 0.15);
         }
+
+        .header-controls { position: relative; }
+
+        .menu-toggle {
+            width: 36px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .action-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 180px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+            z-index: 5000;
+        }
+
+        .action-menu.open { display: block; }
+
+        .action-menu button {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .action-menu button:hover { background: var(--bg-tertiary); }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -267,8 +310,12 @@
             font-size: 16px;
             line-height: 1.5;
             word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: anywhere;
             white-space: pre-wrap;
             position: relative;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .message.miso .bubble {
@@ -377,6 +424,7 @@
             text-decoration: underline;
             text-decoration-thickness: 1px;
             text-underline-offset: 2px;
+            word-break: break-all;
         }
 
         .message-link:hover {
@@ -845,13 +893,16 @@
             </div>
         </div>
         <div class="header-controls">
-            <button class="icon-btn" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
-            <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
-                <option value="">Loading sessions...</option>
+                <option value="" disabled>Loading sessions...</option>
             </select>
-            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">Logout</button>
+            <button class="icon-btn menu-toggle" id="menuBtn" title="More" aria-label="More">☰</button>
+            <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
+                <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
+                <button type="button" id="menuThemeBtn" role="menuitem">🌙 Toggle theme</button>
+                <button type="button" id="menuLogoutBtn" role="menuitem">⎋ Logout</button>
+            </div>
         </div>
     </header>
     
@@ -1452,41 +1503,44 @@
         const sessionSelect = document.getElementById('sessionSelect');
         const assistantNameEl = document.getElementById('assistantName');
         const refreshBtn = document.getElementById('refreshBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const soundToggleBtn = document.getElementById('soundToggleBtn');
-        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const menuBtn = document.getElementById('menuBtn');
+        const actionMenu = document.getElementById('actionMenu');
+        const menuSoundBtn = document.getElementById('menuSoundBtn');
+        const menuThemeBtn = document.getElementById('menuThemeBtn');
+        const menuLogoutBtn = document.getElementById('menuLogoutBtn');
 
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             document.documentElement.setAttribute('data-theme', newTheme === 'dark' ? '' : newTheme);
             localStorage.setItem(THEME_STORAGE_KEY, newTheme);
-            themeToggleBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
+            updateThemeToggle();
         }
 
         function initTheme() {
             const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
             if (savedTheme === 'light') {
                 document.documentElement.setAttribute('data-theme', 'light');
-                themeToggleBtn.textContent = '☀️';
-            } else {
-                themeToggleBtn.textContent = '🌙';
             }
+            updateThemeToggle();
+        }
+
+        function closeActionMenu() {
+            actionMenu?.classList.remove('open');
         }
 
         // Initialize theme on load
         initTheme();
 
         function updateSoundToggle() {
-            soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
-            soundToggleBtn.classList.toggle('active', soundEnabled);
-            soundToggleBtn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
-            soundToggleBtn.title = soundEnabled ? 'Reply sound on' : 'Reply sound off';
+            if (!menuSoundBtn) return;
+            menuSoundBtn.textContent = soundEnabled ? '🔔 Sound: on' : '🔕 Sound: off';
         }
 
         function updateThemeToggle() {
+            if (!menuThemeBtn) return;
             const theme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
-            themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
+            menuThemeBtn.textContent = theme === 'light' ? '☀️ Theme: light' : '🌙 Theme: dark';
         }
 
         function updateDocumentTitle() {
@@ -1668,7 +1722,6 @@
         }
 
         function startHistoryPolling() {
-            if (sseConnected) return;
             stopHistoryPolling();
             historyPollTimer = setInterval(() => {
                 pollSessionHistory();
@@ -1731,7 +1784,7 @@
                 const avatar = document.createElement('img');
                 avatar.className = 'message-avatar';
                 avatar.src = '/favicon-32x32.png';
-                avatar.alt = 'Assistant avatar';
+                avatar.alt = 'Miso avatar';
                 avatar.loading = 'lazy';
                 avatar.decoding = 'async';
                 div.appendChild(avatar);
@@ -1897,7 +1950,10 @@
         function renderPendingForSession(sessionKey) {
             const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
             pending.forEach((item) => {
-                addMessage('user', `${item.message} ⏳`, { reactionKeyHint: `queued:${item.id}` });
+                addMessage('user', `${item.message} ⏳`, {
+                    reactionKeyHint: `queued:${item.id}`,
+                    timestamp: item.createdAt || Date.now(),
+                });
             });
             if (pending.length > 0) {
                 addMessage('system', `${pending.length} queued message${pending.length > 1 ? 's' : ''} will retry.`);
@@ -1934,7 +1990,6 @@
 
             eventSource.onopen = () => {
                 sseConnected = true;
-                stopHistoryPolling();
                 console.log('📡 SSE connected');
             };
 
@@ -1973,7 +2028,8 @@
 
                 if (data.defaultSessionKey) defaultSessionKey = data.defaultSessionKey;
 
-                sessionSelect.innerHTML = '<option value="">Select session...</option>';
+                sessionSelect.innerHTML = '';
+                sessionSelect.disabled = false;
 
                 sessionMetaByKey.clear();
                 sessions.forEach((session) => {
@@ -2012,7 +2068,7 @@
             localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
-            const sessionAssistant = configuredAssistantName || selectedMeta?.displayName || (selectedMeta?.agentName && selectedMeta?.agentName !== selectedMeta?.agentId ? selectedMeta.agentName : '') || 'Assistant';
+            const sessionAssistant = selectedMeta?.agentName || selectedMeta?.displayName || configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             setOnlineState(true, 'Loading history...');
@@ -2071,6 +2127,7 @@
                     }
                     
                     // Remove typing indicator after getting response
+                    await pollSessionHistory();
                 }
             } catch (error) {
                 console.error('Send error:', error);
@@ -2161,7 +2218,11 @@
             }
 
             const queuedId = queueId();
-            addMessage('user', messageText, { reactionKeyHint: `queued:${queuedId}` });
+            const createdAt = Date.now();
+            addMessage('user', messageText, {
+                reactionKeyHint: `queued:${queuedId}`,
+                timestamp: createdAt,
+            });
             messageInput.value = '';
             resizeMessageInput();
             messageInput.focus();
@@ -2169,7 +2230,7 @@
                 id: queuedId,
                 sessionKey: currentSessionKey,
                 message: messageText,
-                createdAt: Date.now(),
+                createdAt,
             });
             savePendingQueue(sendQueue);
             processQueue();
@@ -2241,7 +2302,10 @@
             emojiPicker.classList.toggle('open');
         });
         
-        document.addEventListener('click', () => emojiPicker.classList.remove('open'));
+        document.addEventListener('click', () => {
+            emojiPicker.classList.remove('open');
+            closeActionMenu();
+        });
         
         messageInput.addEventListener('input', resizeMessageInput);
         messageInput.addEventListener('keydown', (e) => {
@@ -2257,14 +2321,28 @@
             }
         });
 
-        refreshBtn.addEventListener('click', refreshCurrentSession);
-        themeToggleBtn.addEventListener('click', toggleTheme);
-        logoutBtn.addEventListener('click', logout);
+        refreshBtn?.addEventListener('click', refreshCurrentSession);
         sendBtn.addEventListener('click', () => sendMessage());
-        soundToggleBtn.addEventListener('click', () => {
+
+        menuBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            actionMenu?.classList.toggle('open');
+        });
+        actionMenu?.addEventListener('click', (e) => e.stopPropagation());
+
+        menuSoundBtn?.addEventListener('click', () => {
+            closeActionMenu();
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
             updateSoundToggle();
+        });
+        menuThemeBtn?.addEventListener('click', () => {
+            closeActionMenu();
+            toggleTheme();
+        });
+        menuLogoutBtn?.addEventListener('click', () => {
+            closeActionMenu();
+            logout();
         });
 
         document.addEventListener('visibilitychange', () => {
