@@ -664,6 +664,8 @@
             max-width: 200px;
             max-height: 200px;
             overflow-y: auto;
+            overflow-x: hidden;
+            box-sizing: border-box;
             z-index: 100;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
@@ -708,6 +710,9 @@
             cursor: pointer;
             padding: 4px;
             border-radius: 4px;
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .emoji-picker button:hover {
