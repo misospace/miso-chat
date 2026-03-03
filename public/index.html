@@ -1950,7 +1950,10 @@
         function renderPendingForSession(sessionKey) {
             const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
             pending.forEach((item) => {
-                addMessage('user', `${item.message} ⏳`, { reactionKeyHint: `queued:${item.id}` });
+                addMessage('user', `${item.message} ⏳`, {
+                    reactionKeyHint: `queued:${item.id}`,
+                    timestamp: item.createdAt || Date.now(),
+                });
             });
             if (pending.length > 0) {
                 addMessage('system', `${pending.length} queued message${pending.length > 1 ? 's' : ''} will retry.`);
@@ -2215,7 +2218,11 @@
             }
 
             const queuedId = queueId();
-            addMessage('user', messageText, { reactionKeyHint: `queued:${queuedId}` });
+            const createdAt = Date.now();
+            addMessage('user', messageText, {
+                reactionKeyHint: `queued:${queuedId}`,
+                timestamp: createdAt,
+            });
             messageInput.value = '';
             resizeMessageInput();
             messageInput.focus();
@@ -2223,7 +2230,7 @@
                 id: queuedId,
                 sessionKey: currentSessionKey,
                 message: messageText,
-                createdAt: Date.now(),
+                createdAt,
             });
             savePendingQueue(sendQueue);
             processQueue();
