@@ -2142,92 +2142,77 @@
             }
         }
 
-        // Slash command handler
+        async function sendSlashCommandToOpenClaw(rawSlashCommand) {
+            if (!currentSessionKey) {
+                addMessage('system', 'Select a session first.');
+                return;
+            }
+
+            try {
+                const response = await apiFetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: rawSlashCommand }),
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    addMessage('system', `OpenClaw command failed: ${data?.error || response.statusText || 'unknown error'}`);
+                    return;
+                }
+
+                const reply =
+                    (typeof data?.response?.text === 'string' && data.response.text.trim())
+                    || (typeof data?.response?.message === 'string' && data.response.message.trim())
+                    || (typeof data?.response === 'string' && data.response.trim())
+                    || '';
+
+                if (reply) addMessage('miso', reply);
+                else addMessage('system', `Command sent: ${rawSlashCommand}`);
+            } catch (error) {
+                addMessage('system', `OpenClaw command failed: ${error?.message || 'network error'}`);
+            }
+        }
+
+        // Slash command handler (OpenClaw-first, bypasses local queue)
         function handleSlashCommand(cmd) {
             const input = cmd.slice(1).trim();
-            const [rawCommand = '', ...rest] = input.split(/\s+/);
+            const [rawCommand = ''] = input.split(/\s+/);
             const command = rawCommand.toLowerCase();
-            const args = rest.join(' ').trim();
-            
-            switch (command) {
-                case 'help':
-                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show OpenClaw session status\n- /stop - Abort active OpenClaw run for this session\n- /backend <url> - Set API base URL (empty to reset)\n- /logout - Sign out and clear local session state');
-                    break;
-                case 'clear':
-                    clearChatDisplay();
-                    addMessage('system', 'Chat cleared.');
-                    break;
-                case 'status':
-                    (async () => {
-                        try {
-                            const query = currentSessionKey ? `?sessionKey=${encodeURIComponent(currentSessionKey)}` : '';
-                            const response = await apiFetch(`/api/openclaw-status${query}`);
-                            const data = await response.json();
 
-                            if (!response.ok || data?.ok === false) {
-                                addMessage('system', `OpenClaw status failed: ${data?.error || 'unknown error'}`);
-                                return;
-                            }
+            if (command === 'help') {
+                addMessage('system', 'Slash commands are sent directly to OpenClaw (queue bypass).\nSpecial handling: /status (native session status card).');
+                return;
+            }
 
-                            const text =
-                                (typeof data?.text === 'string' && data.text.trim())
-                                || (typeof data?.payload?.statusText === 'string' && data.payload.statusText.trim())
-                                || (typeof data?.payload?.text === 'string' && data.payload.text.trim())
-                                || (typeof data?.payload?.summary === 'string' && data.payload.summary.trim())
-                                || 'OpenClaw status unavailable.';
+            if (command === 'status') {
+                (async () => {
+                    try {
+                        const query = currentSessionKey ? `?sessionKey=${encodeURIComponent(currentSessionKey)}` : '';
+                        const response = await apiFetch(`/api/openclaw-status${query}`);
+                        const data = await response.json();
 
-                            // Render like assistant output (left-aligned), not centered system card.
-                            addMessage('miso', text);
-                        } catch (error) {
-                            addMessage('system', `OpenClaw status failed: ${error?.message || 'network error'}`);
-                        }
-                    })();
-                    break;
-                case 'backend': {
-                    const normalized = setApiBaseUrl(args);
-                    addMessage('system', normalized
-                        ? `Backend set to: ${normalized}`
-                        : 'Backend reset to same-origin.');
-                    connectEventSource();
-                    loadConfig();
-                    loadSessions();
-                    break;
-                }
-                case 'stop':
-                    (async () => {
-                        if (!currentSessionKey) {
-                            addMessage('system', 'No active session selected.');
+                        if (!response.ok || data?.ok === false) {
+                            addMessage('system', `OpenClaw status failed: ${data?.error || 'unknown error'}`);
                             return;
                         }
 
-                        try {
-                            const response = await apiFetch('/api/openclaw-stop', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ sessionKey: currentSessionKey }),
-                            });
-                            const data = await response.json();
+                        const text =
+                            (typeof data?.text === 'string' && data.text.trim())
+                            || (typeof data?.payload?.statusText === 'string' && data.payload.statusText.trim())
+                            || (typeof data?.payload?.text === 'string' && data.payload.text.trim())
+                            || (typeof data?.payload?.summary === 'string' && data.payload.summary.trim())
+                            || 'OpenClaw status unavailable.';
 
-                            if (!response.ok || data?.ok === false) {
-                                addMessage('system', `OpenClaw stop failed: ${data?.error || 'unknown error'}`);
-                                return;
-                            }
-
-                            // Optional local queue cleanup so stale queued items do not restart work.
-                            sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
-                            savePendingQueue(sendQueue);
-                            addMessage('system', 'Abort signal sent to OpenClaw for this session.');
-                        } catch (error) {
-                            addMessage('system', `OpenClaw stop failed: ${error?.message || 'network error'}`);
-                        }
-                    })();
-                    break;
-                case 'logout':
-                    logout();
-                    break;
-                default:
-                    addMessage('system', `Unknown command: /${command}\nType /help for available commands.`);
+                        addMessage('miso', text);
+                    } catch (error) {
+                        addMessage('system', `OpenClaw status failed: ${error?.message || 'network error'}`);
+                    }
+                })();
+                return;
             }
+
+            sendSlashCommandToOpenClaw(cmd);
         }
 
         function clearChatDisplay() {
