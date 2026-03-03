@@ -173,6 +173,47 @@
             box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
             background: rgba(233, 69, 96, 0.15);
         }
+
+        .header-controls { position: relative; }
+
+        .menu-toggle {
+            width: 36px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .action-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 180px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+            z-index: 1000;
+        }
+
+        .action-menu.open { display: block; }
+
+        .action-menu button {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .action-menu button:hover { background: var(--bg-tertiary); }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -242,6 +283,17 @@
             flex-direction: column;
             gap: 6px;
             min-width: 0;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: var(--text-secondary);
+            opacity: 0.7;
+            padding: 0 4px;
+        }
+
+        .message.user .message-time {
+            text-align: right;
         }
 
         .bubble {
@@ -824,12 +876,17 @@
         </div>
         <div class="header-controls">
             <button class="icon-btn" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
-            <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
             <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="">Loading sessions...</option>
             </select>
-            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">Logout</button>
+            <button class="icon-btn menu-toggle" id="menuBtn" title="More" aria-label="More">☰</button>
+            <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
+                <button type="button" id="menuRefreshBtn" role="menuitem">↻ Refresh</button>
+                <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
+                <button type="button" id="menuThemeBtn" role="menuitem">🌙 Toggle theme</button>
+                <button type="button" id="menuLogoutBtn" role="menuitem">⎋ Logout</button>
+            </div>
         </div>
     </header>
     
@@ -1429,10 +1486,14 @@
         const typingIndicator = document.getElementById('typingIndicator');
         const sessionSelect = document.getElementById('sessionSelect');
         const assistantNameEl = document.getElementById('assistantName');
-        const refreshBtn = document.getElementById('refreshBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
         const soundToggleBtn = document.getElementById('soundToggleBtn');
         const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const menuBtn = document.getElementById('menuBtn');
+        const actionMenu = document.getElementById('actionMenu');
+        const menuRefreshBtn = document.getElementById('menuRefreshBtn');
+        const menuSoundBtn = document.getElementById('menuSoundBtn');
+        const menuThemeBtn = document.getElementById('menuThemeBtn');
+        const menuLogoutBtn = document.getElementById('menuLogoutBtn');
 
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -1450,6 +1511,10 @@
             } else {
                 themeToggleBtn.textContent = '🌙';
             }
+        }
+
+        function closeActionMenu() {
+            actionMenu?.classList.remove('open');
         }
 
         // Initialize theme on load
@@ -1691,6 +1756,7 @@
                     addMessage(sender, msg.content, {
                         reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
                         toolCalls: msg.toolCalls,
+                        timestamp: msg.timestamp,
                     });
                 });
             } catch (error) {
@@ -1831,6 +1897,15 @@
                 contentWrap.appendChild(row);
             }
 
+            // Add timestamp if provided
+            if (options.timestamp) {
+                const timeEl = document.createElement('div');
+                timeEl.className = 'message-time';
+                const date = new Date(options.timestamp);
+                timeEl.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                contentWrap.appendChild(timeEl);
+            }
+
             div.appendChild(contentWrap);
             messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -1857,6 +1932,7 @@
                     reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
                     suppressNotify: true,
                     toolCalls: msg.toolCalls,
+                    timestamp: msg.timestamp,
                 });
             });
         }
@@ -2208,7 +2284,10 @@
             emojiPicker.classList.toggle('open');
         });
         
-        document.addEventListener('click', () => emojiPicker.classList.remove('open'));
+        document.addEventListener('click', () => {
+            emojiPicker.classList.remove('open');
+            closeActionMenu();
+        });
         
         messageInput.addEventListener('input', resizeMessageInput);
         messageInput.addEventListener('keydown', (e) => {
@@ -2224,14 +2303,36 @@
             }
         });
 
-        refreshBtn.addEventListener('click', refreshCurrentSession);
         themeToggleBtn.addEventListener('click', toggleTheme);
-        logoutBtn.addEventListener('click', logout);
         sendBtn.addEventListener('click', () => sendMessage());
         soundToggleBtn.addEventListener('click', () => {
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
             updateSoundToggle();
+        });
+
+        menuBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            actionMenu?.classList.toggle('open');
+        });
+        actionMenu?.addEventListener('click', (e) => e.stopPropagation());
+        menuRefreshBtn?.addEventListener('click', async () => {
+            closeActionMenu();
+            await refreshCurrentSession();
+        });
+        menuSoundBtn?.addEventListener('click', () => {
+            closeActionMenu();
+            soundEnabled = !soundEnabled;
+            localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
+            updateSoundToggle();
+        });
+        menuThemeBtn?.addEventListener('click', () => {
+            closeActionMenu();
+            toggleTheme();
+        });
+        menuLogoutBtn?.addEventListener('click', () => {
+            closeActionMenu();
+            logout();
         });
 
         document.addEventListener('visibilitychange', () => {

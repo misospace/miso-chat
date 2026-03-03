@@ -60,7 +60,6 @@ app.use((req, res, next) => {
 app.use(express.static('public', { index: false }));
 
 // Session config
-const oidcEnabled = process.env.OIDC_ENABLED === 'true';
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   resave: false,
@@ -82,8 +81,11 @@ app.use(passport.session());
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
+const oidcEnabled = process.env.OIDC_ENABLED === 'true';
+const localAuthEnabled = process.env.LOCAL_AUTH_ENABLED !== 'false';
+
 // Local Auth Strategy
-if (process.env.OIDC_ENABLED !== 'true') {
+if (localAuthEnabled) {
   const localUsers = (process.env.LOCAL_USERS || 'admin:password123').split(',');
   const validUsers = localUsers.map(u => {
     const [user, pass] = u.split(':');
@@ -97,7 +99,9 @@ if (process.env.OIDC_ENABLED !== 'true') {
       return done(null, false, { message: 'Invalid credentials' });
     }
   ));
-} else {
+}
+
+if (oidcEnabled) {
   const providerUrl = (process.env.OIDC_PROVIDER_URL || '').trim();
   const providerIssuer = providerUrl
     ? providerUrl.replace(/\/\.well-known\/openid-configuration\/?$/, '/')
@@ -143,22 +147,33 @@ const isAuthenticated = (req, res, next) => {
 
 // Login
 app.get('/login', (req, res) => {
-  if (process.env.OIDC_ENABLED === 'true') {
-    return res.redirect('/auth/oidc');
-  }
   return res.sendFile(__dirname + '/public/login.html');
 });
 
+app.get('/api/login-options', (req, res) => {
+  const issuerLabel = process.env.OIDC_ISSUER_LABEL
+    || process.env.OIDC_PROVIDER_NAME
+    || (process.env.OIDC_ISSUER ? String(process.env.OIDC_ISSUER).replace(/^https?:\/\//, '').replace(/\/.*/, '') : 'OIDC');
+  res.json({
+    localAuthEnabled,
+    oidcEnabled,
+    oidcLabel: issuerLabel,
+  });
+});
+
 app.post('/login', (req, res, next) => {
-  if (process.env.OIDC_ENABLED === 'true') {
-    return res.redirect('/auth/oidc');
+  if (!localAuthEnabled) {
+    return res.redirect('/login?error=local_disabled');
   }
   return passport.authenticate('local', {
     successRedirect: '/',
     failureRedirect: '/login?error=invalid',
   })(req, res, next);
 });
-app.get('/auth/oidc', passport.authenticate('oidc'));
+app.get('/auth/oidc', (req, res, next) => {
+  if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
+  return passport.authenticate('oidc')(req, res, next);
+});
 app.get('/auth/oidc/callback', passport.authenticate('oidc', { successRedirect: '/', failureRedirect: '/login?error=oidc_failed' }));
 app.post('/logout', (req, res) => {
   req.logout((logoutErr) => {
@@ -881,9 +896,10 @@ function sanitizeAssistantText(text) {
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     const result = await gatewayInvoke('sessions_list', {
-      limit: 50,
+      limit: 200,
       includeLastMessage: true,
       includeDerivedTitles: true,
+      includeArchived: true,
     });
     const payload = unwrapToolResult(result);
     const sessions = (payload?.sessions || []).map((s) => {
