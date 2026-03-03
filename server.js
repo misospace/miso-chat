@@ -264,7 +264,12 @@ app.get('/api/openclaw-status', isAuthenticated, async (req, res) => {
     });
 
     const payload = unwrapToolResult(result);
-    const text = payload?.text || payload?.summary || result?.text || '';
+    const text =
+      payload?.statusText
+      || payload?.text
+      || payload?.summary
+      || result?.text
+      || '';
 
     res.json({ ok: true, payload, text });
   } catch (error) {

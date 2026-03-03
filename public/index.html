@@ -2171,10 +2171,13 @@
 
                             const text =
                                 (typeof data?.text === 'string' && data.text.trim())
+                                || (typeof data?.payload?.statusText === 'string' && data.payload.statusText.trim())
                                 || (typeof data?.payload?.text === 'string' && data.payload.text.trim())
-                                || JSON.stringify(data?.payload || data, null, 2);
+                                || (typeof data?.payload?.summary === 'string' && data.payload.summary.trim())
+                                || 'OpenClaw status unavailable.';
 
-                            addMessage('system', text);
+                            // Render like assistant output (left-aligned), not centered system card.
+                            addMessage('miso', text);
                         } catch (error) {
                             addMessage('system', `OpenClaw status failed: ${error?.message || 'network error'}`);
                         }
