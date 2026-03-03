@@ -881,9 +881,10 @@ function sanitizeAssistantText(text) {
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     const result = await gatewayInvoke('sessions_list', {
-      limit: 50,
+      limit: 200,
       includeLastMessage: true,
       includeDerivedTitles: true,
+      includeArchived: true,
     });
     const payload = unwrapToolResult(result);
     const sessions = (payload?.sessions || []).map((s) => {
