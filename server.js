@@ -252,6 +252,27 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// GET /api/openclaw-status - Return native OpenClaw session status card/details
+app.get('/api/openclaw-status', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = typeof req.query.sessionKey === 'string' && req.query.sessionKey.trim()
+      ? req.query.sessionKey.trim()
+      : undefined;
+
+    const result = await gatewayInvoke('session_status', {
+      ...(sessionKey ? { sessionKey } : {}),
+    });
+
+    const payload = unwrapToolResult(result);
+    const text = payload?.text || payload?.summary || result?.text || '';
+
+    res.json({ ok: true, payload, text });
+  } catch (error) {
+    console.error('Error getting OpenClaw status:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 /**
  * Infer a readable agent name from session key metadata
  * Handles formats like: agent:main:main, agent:chatgpt:thread-123, etc.
