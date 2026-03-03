@@ -894,29 +894,52 @@ function sanitizeAssistantText(text) {
 // GET /api/sessions - List all sessions via gateway
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
-    const result = await gatewayInvoke('sessions_list', {
-      limit: 200,
-      includeLastMessage: true,
-      includeDerivedTitles: true,
-      includeArchived: true,
-    });
-    const payload = unwrapToolResult(result);
-    const sessions = (payload?.sessions || []).map((s) => {
-      const sessionKey = s.key || s.sessionKey || s.sessionId;
-      // Infer agent name from session key metadata (e.g., "agent:main:main" -> "Main")
-      const inferredAgentName = inferAgentNameFromKey(sessionKey);
-      return {
-        sessionKey,
-        displayName: s.displayName || s.agentName || inferredAgentName || sessionKey,
-        updatedAt: s.updatedAt,
-        kind: s.kind,
-        channel: s.channel,
-        lastMessage: s.lastMessage,
-        title: s.derivedTitle || s.title,
-        agentId: s.agentId,
-        agentName: s.agentName || inferredAgentName,
-      };
-    });
+    let rawSessions = [];
+
+    if (gatewayWsManager?.isConnected?.()) {
+      try {
+        const wsFrame = await gatewayWsManager.send('sessions.list', {
+          limit: 200,
+          includeLastMessage: true,
+          includeDerivedTitles: true,
+          includeArchived: true,
+        }, 15);
+        rawSessions = wsFrame?.result?.sessions || wsFrame?.sessions || [];
+      } catch (wsErr) {
+        console.warn('sessions.list via WS failed, falling back to tools invoke:', wsErr.message);
+      }
+    }
+
+    if (!Array.isArray(rawSessions) || rawSessions.length === 0) {
+      const result = await gatewayInvoke('sessions_list', {
+        limit: 200,
+        includeLastMessage: true,
+        includeDerivedTitles: true,
+        includeArchived: true,
+      });
+      const payload = unwrapToolResult(result);
+      rawSessions = payload?.sessions || [];
+    }
+
+    const sessions = rawSessions
+      .map((s) => {
+        const sessionKey = s.key || s.sessionKey || s.sessionId;
+        if (!sessionKey || sessionKey.includes(':cron:')) return null;
+
+        const inferredAgentName = inferAgentNameFromKey(sessionKey);
+        return {
+          sessionKey,
+          displayName: s.displayName || s.derivedTitle || s.title || s.agentName || inferredAgentName || sessionKey,
+          updatedAt: s.updatedAt,
+          kind: s.kind,
+          channel: s.channel,
+          lastMessage: s.lastMessage,
+          title: s.derivedTitle || s.title || s.displayName,
+          agentId: s.agentId,
+          agentName: s.agentName || inferredAgentName,
+        };
+      })
+      .filter(Boolean);
 
     const deduped = [];
     const seen = new Set();

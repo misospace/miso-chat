@@ -82,6 +82,8 @@
             gap: 12px;
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
+            position: relative;
+            z-index: 50;
             -webkit-backdrop-filter: blur(20px);
             backdrop-filter: blur(20px);
         }
@@ -90,12 +92,18 @@
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background: var(--accent-gradient);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            box-shadow: 0 2px 12px rgba(233, 69, 96, 0.4);
+            overflow: hidden;
+            background: var(--bg-tertiary);
+            display: grid;
+            place-items: center;
+            box-shadow: 0 2px 12px rgba(233, 69, 96, 0.25);
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
         
         .header-info h1 {
@@ -196,7 +204,7 @@
             border-radius: 10px;
             padding: 6px;
             box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-            z-index: 1000;
+            z-index: 5000;
         }
 
         .action-menu.open { display: block; }
@@ -866,7 +874,7 @@
 </head>
 <body>
     <header class="header">
-        <div class="avatar">🍲</div>
+        <div class="avatar"><img src="/favicon-32x32.png" alt="Assistant avatar" loading="eager" decoding="async"></div>
         <div class="header-info">
             <h1 id="assistantName">Assistant</h1>
             <div class="status">
@@ -875,14 +883,12 @@
             </div>
         </div>
         <div class="header-controls">
-            <button class="icon-btn" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
-            <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
+            <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
-                <option value="">Loading sessions...</option>
+                <option value="" disabled>Loading sessions...</option>
             </select>
             <button class="icon-btn menu-toggle" id="menuBtn" title="More" aria-label="More">☰</button>
             <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
-                <button type="button" id="menuRefreshBtn" role="menuitem">↻ Refresh</button>
                 <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
                 <button type="button" id="menuThemeBtn" role="menuitem">🌙 Toggle theme</button>
                 <button type="button" id="menuLogoutBtn" role="menuitem">⎋ Logout</button>
@@ -1486,11 +1492,9 @@
         const typingIndicator = document.getElementById('typingIndicator');
         const sessionSelect = document.getElementById('sessionSelect');
         const assistantNameEl = document.getElementById('assistantName');
-        const soundToggleBtn = document.getElementById('soundToggleBtn');
-        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
         const menuBtn = document.getElementById('menuBtn');
         const actionMenu = document.getElementById('actionMenu');
-        const menuRefreshBtn = document.getElementById('menuRefreshBtn');
         const menuSoundBtn = document.getElementById('menuSoundBtn');
         const menuThemeBtn = document.getElementById('menuThemeBtn');
         const menuLogoutBtn = document.getElementById('menuLogoutBtn');
@@ -1500,17 +1504,15 @@
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             document.documentElement.setAttribute('data-theme', newTheme === 'dark' ? '' : newTheme);
             localStorage.setItem(THEME_STORAGE_KEY, newTheme);
-            themeToggleBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
+            updateThemeToggle();
         }
 
         function initTheme() {
             const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
             if (savedTheme === 'light') {
                 document.documentElement.setAttribute('data-theme', 'light');
-                themeToggleBtn.textContent = '☀️';
-            } else {
-                themeToggleBtn.textContent = '🌙';
             }
+            updateThemeToggle();
         }
 
         function closeActionMenu() {
@@ -1521,15 +1523,14 @@
         initTheme();
 
         function updateSoundToggle() {
-            soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
-            soundToggleBtn.classList.toggle('active', soundEnabled);
-            soundToggleBtn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
-            soundToggleBtn.title = soundEnabled ? 'Reply sound on' : 'Reply sound off';
+            if (!menuSoundBtn) return;
+            menuSoundBtn.textContent = soundEnabled ? '🔔 Sound: on' : '🔕 Sound: off';
         }
 
         function updateThemeToggle() {
+            if (!menuThemeBtn) return;
             const theme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
-            themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
+            menuThemeBtn.textContent = theme === 'light' ? '☀️ Theme: light' : '🌙 Theme: dark';
         }
 
         function updateDocumentTitle() {
@@ -2016,7 +2017,8 @@
 
                 if (data.defaultSessionKey) defaultSessionKey = data.defaultSessionKey;
 
-                sessionSelect.innerHTML = '<option value="">Select session...</option>';
+                sessionSelect.innerHTML = '';
+                sessionSelect.disabled = false;
 
                 sessionMetaByKey.clear();
                 sessions.forEach((session) => {
@@ -2303,23 +2305,15 @@
             }
         });
 
-        themeToggleBtn.addEventListener('click', toggleTheme);
+        refreshBtn?.addEventListener('click', refreshCurrentSession);
         sendBtn.addEventListener('click', () => sendMessage());
-        soundToggleBtn.addEventListener('click', () => {
-            soundEnabled = !soundEnabled;
-            localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
-            updateSoundToggle();
-        });
 
         menuBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
             actionMenu?.classList.toggle('open');
         });
         actionMenu?.addEventListener('click', (e) => e.stopPropagation());
-        menuRefreshBtn?.addEventListener('click', async () => {
-            closeActionMenu();
-            await refreshCurrentSession();
-        });
+
         menuSoundBtn?.addEventListener('click', () => {
             closeActionMenu();
             soundEnabled = !soundEnabled;
