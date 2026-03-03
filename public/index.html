@@ -2151,7 +2151,7 @@
             
             switch (command) {
                 case 'help':
-                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show OpenClaw session status\n- /stop - Stop current queue processing\n- /backend <url> - Set API base URL (empty to reset)\n- /logout - Sign out and clear local session state');
+                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show OpenClaw session status\n- /stop - Abort active OpenClaw run for this session\n- /backend <url> - Set API base URL (empty to reset)\n- /logout - Sign out and clear local session state');
                     break;
                 case 'clear':
                     clearChatDisplay();
@@ -2194,9 +2194,33 @@
                     break;
                 }
                 case 'stop':
-                    sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
-                    savePendingQueue(sendQueue);
-                    addMessage('system', 'Queue cleared for this session.');
+                    (async () => {
+                        if (!currentSessionKey) {
+                            addMessage('system', 'No active session selected.');
+                            return;
+                        }
+
+                        try {
+                            const response = await apiFetch('/api/openclaw-stop', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ sessionKey: currentSessionKey }),
+                            });
+                            const data = await response.json();
+
+                            if (!response.ok || data?.ok === false) {
+                                addMessage('system', `OpenClaw stop failed: ${data?.error || 'unknown error'}`);
+                                return;
+                            }
+
+                            // Optional local queue cleanup so stale queued items do not restart work.
+                            sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
+                            savePendingQueue(sendQueue);
+                            addMessage('system', 'Abort signal sent to OpenClaw for this session.');
+                        } catch (error) {
+                            addMessage('system', `OpenClaw stop failed: ${error?.message || 'network error'}`);
+                        }
+                    })();
                     break;
                 case 'logout':
                     logout();

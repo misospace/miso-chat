@@ -278,6 +278,37 @@ app.get('/api/openclaw-status', isAuthenticated, async (req, res) => {
   }
 });
 
+// POST /api/openclaw-stop - Abort current OpenClaw chat run for a session
+app.post('/api/openclaw-stop', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = typeof req.body?.sessionKey === 'string' && req.body.sessionKey.trim()
+      ? req.body.sessionKey.trim()
+      : undefined;
+
+    if (!sessionKey) {
+      return res.status(400).json({ ok: false, error: 'sessionKey is required' });
+    }
+
+    // Preferred path: persistent WS method (matches OpenClaw runtime API)
+    if (gatewayWsManager?.isConnected?.()) {
+      try {
+        const frame = await gatewayWsManager.send('chat.abort', { sessionKey }, 10);
+        return res.json({ ok: true, frame });
+      } catch (wsErr) {
+        console.warn('chat.abort via WS failed, trying tool fallback:', wsErr.message);
+      }
+    }
+
+    // Fallback for environments where WS abort path is unavailable
+    const result = await gatewayInvoke('chat_abort', { sessionKey });
+    const payload = unwrapToolResult(result);
+    return res.json({ ok: true, payload });
+  } catch (error) {
+    console.error('Error aborting OpenClaw run:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 /**
  * Infer a readable agent name from session key metadata
  * Handles formats like: agent:main:main, agent:chatgpt:thread-123, etc.
