@@ -1049,19 +1049,22 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
 
 // POST /api/sessions/:sessionKey/send - Send message via gateway
 app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => {
+  const requestedSessionKey = req.params.sessionKey;
+  const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
+    ? requestedSessionKey
+    : DEFAULT_SESSION_KEY;
+  const { message } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  console.log(`Sending to ${sessionKey}: [message hidden]`);
+
+  // Broadcast typing indicator start
+  broadcastToSseClients('typing.start', { sessionKey, timestamp: Date.now() });
+
   try {
-    const requestedSessionKey = req.params.sessionKey;
-    const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
-      ? requestedSessionKey
-      : DEFAULT_SESSION_KEY;
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    console.log(`Sending to ${sessionKey}: [message hidden]`);
-
     const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
     const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
     const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds, origin: requestOrigin });
@@ -1081,6 +1084,9 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
       });
     }
     res.status(500).json({ error: msg });
+  } finally {
+    // Broadcast typing indicator stop
+    broadcastToSseClients('typing.stop', { sessionKey, timestamp: Date.now() });
   }
 });
 
