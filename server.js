@@ -896,14 +896,37 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     let rawSessions = [];
 
+    const baseSessionsParams = {
+      limit: 200,
+      includeLastMessage: true,
+      includeDerivedTitles: true,
+    };
+
+    const wsSessionsList = async () => {
+      try {
+        return await gatewayWsManager.send('sessions.list', { ...baseSessionsParams, includeArchived: true }, 15);
+      } catch (err) {
+        if (String(err?.message || '').includes('includeArchived')) {
+          return gatewayWsManager.send('sessions.list', baseSessionsParams, 15);
+        }
+        throw err;
+      }
+    };
+
+    const toolSessionsList = async () => {
+      try {
+        return await gatewayInvoke('sessions_list', { ...baseSessionsParams, includeArchived: true });
+      } catch (err) {
+        if (String(err?.message || '').includes('includeArchived')) {
+          return gatewayInvoke('sessions_list', baseSessionsParams);
+        }
+        throw err;
+      }
+    };
+
     if (gatewayWsManager?.isConnected?.()) {
       try {
-        const wsFrame = await gatewayWsManager.send('sessions.list', {
-          limit: 200,
-          includeLastMessage: true,
-          includeDerivedTitles: true,
-          includeArchived: true,
-        }, 15);
+        const wsFrame = await wsSessionsList();
         rawSessions = wsFrame?.result?.sessions || wsFrame?.sessions || [];
       } catch (wsErr) {
         console.warn('sessions.list via WS failed, falling back to tools invoke:', wsErr.message);
@@ -911,12 +934,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
     }
 
     if (!Array.isArray(rawSessions) || rawSessions.length === 0) {
-      const result = await gatewayInvoke('sessions_list', {
-        limit: 200,
-        includeLastMessage: true,
-        includeDerivedTitles: true,
-        includeArchived: true,
-      });
+      const result = await toolSessionsList();
       const payload = unwrapToolResult(result);
       rawSessions = payload?.sessions || [];
     }
