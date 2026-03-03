@@ -1722,7 +1722,6 @@
         }
 
         function startHistoryPolling() {
-            if (sseConnected) return;
             stopHistoryPolling();
             historyPollTimer = setInterval(() => {
                 pollSessionHistory();
@@ -1988,7 +1987,6 @@
 
             eventSource.onopen = () => {
                 sseConnected = true;
-                stopHistoryPolling();
                 console.log('📡 SSE connected');
             };
 
@@ -2126,6 +2124,7 @@
                     }
                     
                     // Remove typing indicator after getting response
+                    await pollSessionHistory();
                 }
             } catch (error) {
                 console.error('Send error:', error);
