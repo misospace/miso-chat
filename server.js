@@ -274,10 +274,25 @@ const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH
 const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
 
 // Persistent WebSocket manager for gateway connections
+const REQUESTED_GATEWAY_SCOPES = [
+  'operator.read',
+  'operator.write',
+  'operator.pairing',
+  'chat.send',
+  'sessions.send',
+  'sessions.list',
+  'sessions.history',
+];
+
 const gatewayWsManager = new GatewayWsManager({
   wsUrl: getGatewayWsUrl(),
   clientId: GATEWAY_WS_CLIENT_ID,
   clientMode: GATEWAY_WS_CLIENT_MODE,
+  token: GATEWAY_TOKEN,
+  role: 'operator',
+  scopes: REQUESTED_GATEWAY_SCOPES,
+  waitChallengeMs: GATEWAY_WS_WAIT_CHALLENGE_MS,
+  buildDeviceAuth: ({ nonce, scopes }) => buildGatewayDeviceAuth({ nonce, scopes }),
   headers: {
     ...(GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {}),
     ...(GATEWAY_WS_ORIGIN ? { Origin: GATEWAY_WS_ORIGIN } : {}),
