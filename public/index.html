@@ -173,6 +173,65 @@
             box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
             background: rgba(233, 69, 96, 0.15);
         }
+
+        .mobile-menu-toggle {
+            display: none;
+        }
+
+        .mobile-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 160px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            padding: 6px;
+            z-index: 1000;
+        }
+
+        .mobile-menu.open {
+            display: block;
+        }
+
+        .mobile-menu button {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            color: var(--text-primary);
+            border: none;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .mobile-menu button:hover {
+            background: var(--bg-tertiary);
+        }
+
+        @media (max-width: 767px) {
+            .header-controls {
+                gap: 6px;
+                position: relative;
+            }
+
+            #refreshBtn,
+            #logoutBtn {
+                display: none;
+            }
+
+            .mobile-menu-toggle {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 32px;
+                padding: 0;
+            }
+        }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -830,6 +889,13 @@
                 <option value="">Loading sessions...</option>
             </select>
             <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">Logout</button>
+            <button class="icon-btn mobile-menu-toggle" id="mobileMenuBtn" title="More" aria-label="More">☰</button>
+            <div class="mobile-menu" id="mobileMenu" role="menu" aria-label="More actions">
+                <button type="button" id="mobileRefreshBtn" role="menuitem">↻ Refresh</button>
+                <button type="button" id="mobileSoundBtn" role="menuitem">🔕 Toggle sound</button>
+                <button type="button" id="mobileThemeBtn" role="menuitem">🌙 Toggle theme</button>
+                <button type="button" id="mobileLogoutBtn" role="menuitem">⎋ Logout</button>
+            </div>
         </div>
     </header>
     
@@ -1433,6 +1499,12 @@
         const logoutBtn = document.getElementById('logoutBtn');
         const soundToggleBtn = document.getElementById('soundToggleBtn');
         const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const mobileMenu = document.getElementById('mobileMenu');
+        const mobileRefreshBtn = document.getElementById('mobileRefreshBtn');
+        const mobileSoundBtn = document.getElementById('mobileSoundBtn');
+        const mobileThemeBtn = document.getElementById('mobileThemeBtn');
+        const mobileLogoutBtn = document.getElementById('mobileLogoutBtn');
 
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -1450,6 +1522,10 @@
             } else {
                 themeToggleBtn.textContent = '🌙';
             }
+        }
+
+        function closeMobileMenu() {
+            mobileMenu?.classList.remove('open');
         }
 
         // Initialize theme on load
@@ -2208,7 +2284,12 @@
             emojiPicker.classList.toggle('open');
         });
         
-        document.addEventListener('click', () => emojiPicker.classList.remove('open'));
+        document.addEventListener('click', (e) => {
+            emojiPicker.classList.remove('open');
+            if (mobileMenu && mobileMenuBtn && !mobileMenu.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
+                closeMobileMenu();
+            }
+        });
         
         messageInput.addEventListener('input', resizeMessageInput);
         messageInput.addEventListener('keydown', (e) => {
@@ -2232,6 +2313,30 @@
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
             updateSoundToggle();
+        });
+
+        mobileMenuBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            mobileMenu?.classList.toggle('open');
+        });
+        mobileMenu?.addEventListener('click', (e) => e.stopPropagation());
+        mobileRefreshBtn?.addEventListener('click', async () => {
+            closeMobileMenu();
+            await refreshCurrentSession();
+        });
+        mobileSoundBtn?.addEventListener('click', () => {
+            closeMobileMenu();
+            soundEnabled = !soundEnabled;
+            localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
+            updateSoundToggle();
+        });
+        mobileThemeBtn?.addEventListener('click', () => {
+            closeMobileMenu();
+            toggleTheme();
+        });
+        mobileLogoutBtn?.addEventListener('click', () => {
+            closeMobileMenu();
+            logout();
         });
 
         document.addEventListener('visibilitychange', () => {
