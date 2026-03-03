@@ -43,6 +43,23 @@ securityMiddleware.forEach(middleware => app.use(middleware));
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip'];
+    if (typeof cfIp === 'string' && cfIp.trim()) return cfIp.trim();
+
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return forwarded.split(',')[0].trim();
+    }
+
+    return req.ip;
+  },
+  skip: (req) => {
+    // Never rate-limit realtime/bootstrap reads; this can deadlock the UI.
+    return req.path === '/events' || req.path === '/health' || req.path === '/config' || req.path === '/auth';
+  },
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/', limiter);
