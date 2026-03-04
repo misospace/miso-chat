@@ -938,6 +938,7 @@
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
         const HISTORY_POLL_INTERVAL_MS = 8000;
+        const QUEUE_RETRY_DELAY_MS = 5000;
         const THEME_STORAGE_KEY = 'miso.theme.v1';
 
         let currentSessionKey = null;
@@ -946,6 +947,7 @@
         let sending = false;
         let historyPollTimer = null;
         let historyPollInFlight = false;
+        let queueRetryTimer = null;
         let sseConnected = false;
         let sseTypingActive = false;
         let historyMessageKeys = new Set();
@@ -1680,6 +1682,21 @@
             return queued > 0 ? `Online · queue ${queued}` : 'Online';
         }
 
+        function clearQueueRetryTimer() {
+            if (queueRetryTimer) {
+                clearTimeout(queueRetryTimer);
+                queueRetryTimer = null;
+            }
+        }
+
+        function scheduleQueueRetry(delayMs = QUEUE_RETRY_DELAY_MS) {
+            if (queueRetryTimer) return;
+            queueRetryTimer = setTimeout(() => {
+                queueRetryTimer = null;
+                processQueue();
+            }, delayMs);
+        }
+
         function updateTypingIndicator() {
             const hasQueued = currentSessionKey ? queueCountForSession(currentSessionKey) > 0 : false;
             typingIndicator.classList.toggle('active', sseTypingActive || sending || hasQueued);
@@ -1691,7 +1708,20 @@
                 if (!response.ok) return;
                 const health = await response.json();
                 if (health?.gatewayWsConnected === false) {
-                    setOnlineState(false, 'Gateway handshake failed (backend disconnected)');
+                    const reconnecting = Number(health?.gatewayWsReconnectAttempts || 0) > 0;
+                    setOnlineState(false, reconnecting ? 'Reconnecting to gateway…' : 'Gateway handshake failed (backend disconnected)');
+                    if (queueCountForSession(currentSessionKey) > 0) {
+                        scheduleQueueRetry();
+                    }
+                    return;
+                }
+
+                if (currentSessionKey) {
+                    setOnlineState(true, queueStatusText(currentSessionKey));
+                    if (!sending && queueCountForSession(currentSessionKey) > 0) {
+                        clearQueueRetryTimer();
+                        processQueue();
+                    }
                 }
             } catch {
                 // keep current state
@@ -2022,6 +2052,9 @@
 
             eventSource.onopen = () => {
                 sseConnected = true;
+                if (currentSessionKey) {
+                    setOnlineState(true, queueStatusText(currentSessionKey));
+                }
                 updateTypingIndicator();
                 console.log('📡 SSE connected');
             };
@@ -2145,26 +2178,33 @@
             if (sending || sendQueue.length === 0) return;
             if (!currentSessionKey) return;
 
-            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === currentSessionKey);
+            const activeSessionKey = currentSessionKey;
+            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === activeSessionKey);
             if (nextIndex < 0) return;
 
+            clearQueueRetryTimer();
             sending = true;
+            let sendFailed = false;
             const [next] = sendQueue.splice(nextIndex, 1);
             savePendingQueue(sendQueue);
             updateTypingIndicator();
 
-            setOnlineState(true, queueStatusText(currentSessionKey));
+            setOnlineState(true, queueStatusText(activeSessionKey));
 
             try {
-                const response = await apiFetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                const response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: next.message }),
                 });
                 const data = await response.json();
 
-                if (!data?.success) {
-                    addMessage('system', data?.error || 'Send failed');
+                if (!response.ok || !data?.success) {
+                    sendFailed = true;
+                    const errorText = data?.error || response.statusText || 'Send failed';
+                    addMessage('system', errorText);
+                    sendQueue.unshift(next);
+                    savePendingQueue(sendQueue);
                 } else {
                     const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
                     const text = hasSanitizedResponse
@@ -2175,20 +2215,30 @@
                         if (text && text.trim()) rememberLocalAssistantEcho(text);
                         addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
                     }
-                    
+
                     // Remove typing indicator after getting response
                     await pollSessionHistory();
                 }
             } catch (error) {
+                sendFailed = true;
                 console.error('Send error:', error);
                 addMessage('system', `Send failed: ${error.message}`);
                 sendQueue.unshift(next);
                 savePendingQueue(sendQueue);
             } finally {
                 sending = false;
-                const remaining = queueCountForSession(currentSessionKey);
+                const remaining = queueCountForSession(activeSessionKey);
                 updateTypingIndicator();
-                setOnlineState(true, queueStatusText(currentSessionKey));
+
+                if (sendFailed) {
+                    const retryText = remaining > 0 ? `Offline · retrying (${remaining} queued)` : 'Offline';
+                    setOnlineState(false, retryText);
+                    scheduleQueueRetry();
+                    refreshBackendHealth();
+                    return;
+                }
+
+                setOnlineState(true, queueStatusText(activeSessionKey));
                 if (remaining > 0) processQueue();
             }
         }
