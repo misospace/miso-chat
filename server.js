@@ -94,8 +94,23 @@ app.use((req, res, next) => {
 app.use(express.static('public', { index: false }));
 
 // Session config (Redis-backed when REDIS_URL is set)
+const defaultSessionSecret = 'dev-secret-change-in-production';
+const sessionSecret = (process.env.SESSION_SECRET || '').trim() || defaultSessionSecret;
+
+if (process.env.NODE_ENV === 'production') {
+  const insecureSecrets = new Set([
+    defaultSessionSecret,
+    'change-this-to-a-random-secret-at-least-32-characters',
+    'your-secret',
+  ]);
+
+  if (sessionSecret.length < 32 || insecureSecrets.has(sessionSecret)) {
+    throw new Error('SESSION_SECRET must be a strong, unique value (at least 32 characters) in production');
+  }
+}
+
 const sessionConfig = {
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
