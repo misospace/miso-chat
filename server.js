@@ -23,6 +23,10 @@ const server = http.createServer(app);
 
 const oidcEnabled = process.env.OIDC_ENABLED === 'true';
 const localAuthEnabled = process.env.LOCAL_AUTH_ENABLED !== 'false';
+const MAX_CHAT_MESSAGE_LENGTH = (() => {
+  const parsed = Number(process.env.MAX_CHAT_MESSAGE_LENGTH || 4000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4000;
+})();
 
 // SSE clients for real-time gateway event forwarding
 const sseClients = new Set();
@@ -1160,10 +1164,21 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
   const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
     ? requestedSessionKey
     : DEFAULT_SESSION_KEY;
-  const { message } = req.body;
+  const rawMessage = req.body?.message;
 
+  if (typeof rawMessage !== 'string') {
+    return res.status(400).json({ error: 'Message must be a string' });
+  }
+
+  const message = rawMessage.trim();
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
+  }
+  if (message.length > MAX_CHAT_MESSAGE_LENGTH) {
+    return res.status(413).json({
+      error: `Message exceeds ${MAX_CHAT_MESSAGE_LENGTH} characters`,
+      maxLength: MAX_CHAT_MESSAGE_LENGTH,
+    });
   }
 
   console.log(`Sending to ${sessionKey}: [message hidden]`);
