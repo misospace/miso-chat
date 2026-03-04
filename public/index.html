@@ -1465,7 +1465,16 @@
         function normalizeBaseUrl(value) {
             const raw = String(value || '').trim();
             if (!raw) return '';
-            return raw.replace(/\/+$/, '');
+
+            const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+
+            try {
+                const parsed = new URL(withScheme);
+                if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+                return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+            } catch {
+                return '';
+            }
         }
 
         function getApiBaseUrl() {
@@ -1493,6 +1502,22 @@
 
         function apiFetch(path, options = undefined) {
             return fetch(apiUrl(path), options);
+        }
+
+        async function ensureMobileBackendConfigured() {
+            const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
+            if (hasBackendInQuery) return;
+            if (!isLikelyMobile()) return;
+            if (getApiBaseUrl()) return;
+
+            const initial = 'https://miso-chat.jory.dev';
+            const entered = window.prompt('Enter your Miso server URL (e.g. https://miso-chat.jory.dev)', initial);
+            if (entered === null) return;
+
+            const normalized = setApiBaseUrl(entered);
+            if (!normalized) {
+                window.alert('That URL does not look valid. Open the app again and enter a full URL like https://miso-chat.jory.dev');
+            }
         }
 
         const messagesDiv = document.getElementById('messages');
@@ -2384,6 +2409,7 @@
             messageInput.placeholder = `Message ${configuredAssistantName}...`; 
             resizeMessageInput();
             setOnlineState(false, 'Connecting...');
+            await ensureMobileBackendConfigured();
             await loadConfig();
             await loadSessions();
             connectEventSource();

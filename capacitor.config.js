@@ -1,11 +1,9 @@
-module.exports = {
+const serverUrl = process.env.CAPACITOR_SERVER_URL || process.env.CAPACITOR_URL || '';
+
+const config = {
   appId: process.env.CAPACITOR_APP_ID || 'chat.openclaw.client',
   appName: process.env.CAPACITOR_APP_NAME || 'OpenClaw Chat',
   webDir: 'public',
-  server: {
-    androidScheme: 'https',
-    url: process.env.CAPACITOR_SERVER_URL || process.env.CAPACITOR_URL || 'http://localhost:3000'
-  },
   android: {
     buildToolsVersion: '33.0.0',
     minSdkVersion: 22,
@@ -21,3 +19,12 @@ module.exports = {
     }
   }
 };
+
+if (serverUrl) {
+  config.server = {
+    androidScheme: 'https',
+    url: serverUrl
+  };
+}
+
+module.exports = config;
