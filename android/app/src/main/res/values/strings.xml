@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">OpenClaw Chat</string>
-    <string name="title_activity_main">OpenClaw Chat</string>
+    <string name="app_name">Miso Chat</string>
+    <string name="title_activity_main">Miso Chat</string>
     <string name="package_name">chat.openclaw.miso</string>
     <string name="custom_url_scheme">chat.openclaw.miso</string>
 </resources>

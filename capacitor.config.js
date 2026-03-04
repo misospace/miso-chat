@@ -2,7 +2,7 @@ const serverUrl = process.env.CAPACITOR_SERVER_URL || process.env.CAPACITOR_URL 
 
 const config = {
   appId: process.env.CAPACITOR_APP_ID || 'chat.openclaw.client',
-  appName: process.env.CAPACITOR_APP_NAME || 'OpenClaw Chat',
+  appName: process.env.CAPACITOR_APP_NAME || 'Miso Chat',
   webDir: 'public',
   android: {
     buildToolsVersion: '33.0.0',
