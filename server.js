@@ -33,12 +33,36 @@ const sseClients = new Set();
 
 // Trust proxy for rate limiting behind Envoy
 app.set('trust proxy', 1);
+
+const configuredCorsOrigins = String(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const defaultCorsOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'capacitor://localhost',
+  'ionic://localhost',
+];
+
+const allowedCorsOrigins = new Set(configuredCorsOrigins.length > 0 ? configuredCorsOrigins : defaultCorsOrigins);
+
 // Enable CORS for frontend connection
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || true,
+  origin(origin, callback) {
+    // Allow same-origin/server-to-server requests with no Origin header.
+    if (!origin) return callback(null, true);
+
+    if (allowedCorsOrigins.has(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origin not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 app.use(cors(corsOptions));
 
