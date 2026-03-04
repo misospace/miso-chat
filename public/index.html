@@ -785,6 +785,57 @@
             background: var(--bg-tertiary);
         }
 
+        .shortcode-suggestions {
+            position: fixed;
+            display: none;
+            min-width: 180px;
+            max-width: min(320px, calc(100vw - 24px));
+            max-height: 220px;
+            overflow-y: auto;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+            z-index: 120;
+            padding: 6px;
+            gap: 4px;
+        }
+
+        .shortcode-suggestions.open {
+            display: grid;
+        }
+
+        .shortcode-suggestion {
+            width: 100%;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 10px;
+            background: transparent;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .shortcode-suggestion:hover,
+        .shortcode-suggestion.active {
+            background: var(--bg-tertiary);
+        }
+
+        .shortcode-suggestion .emoji {
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .shortcode-suggestion .token {
+            color: var(--text-secondary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+            font-size: 13px;
+        }
+
         .send-btn {
             width: 52px;
             height: 52px;
@@ -938,7 +989,62 @@
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
         const HISTORY_POLL_INTERVAL_MS = 8000;
+        const QUEUE_RETRY_DELAY_MS = 5000;
         const THEME_STORAGE_KEY = 'miso.theme.v1';
+        const EMOJI_SHORTCODES = Object.freeze({
+            smile: '😀',
+            smiley: '😃',
+            grin: '😁',
+            joy: '😂',
+            rofl: '🤣',
+            blush: '😊',
+            innocent: '😇',
+            heart_eyes: '😍',
+            kissing_heart: '😘',
+            thinking: '🤔',
+            neutral_face: '😐',
+            expressionless: '😑',
+            rolling_eyes: '🙄',
+            smirk: '😏',
+            disappointed: '😞',
+            cry: '😢',
+            sob: '😭',
+            scream: '😱',
+            angry: '😠',
+            rage: '🤬',
+            poop: '💩',
+            thumbs_up: '👍',
+            '+1': '👍',
+            thumbs_down: '👎',
+            '-1': '👎',
+            clap: '👏',
+            wave: '👋',
+            pray: '🙏',
+            muscle: '💪',
+            heart: '❤️',
+            broken_heart: '💔',
+            fire: '🔥',
+            star: '⭐',
+            sparkles: '✨',
+            boom: '💥',
+            eyes: '👀',
+            hundred: '💯',
+            check: '✅',
+            x: '❌',
+            warning: '⚠️',
+            tada: '🎉',
+            party_popper: '🎉',
+            rocket: '🚀',
+            wave_goodbye: '👋',
+            coffee: '☕',
+            beer: '🍺',
+            pizza: '🍕',
+            laptop: '💻',
+            bug: '🐛',
+            wrench: '🔧',
+            lock: '🔒',
+            unlock: '🔓',
+        });
 
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
@@ -946,6 +1052,7 @@
         let sending = false;
         let historyPollTimer = null;
         let historyPollInFlight = false;
+        let queueRetryTimer = null;
         let sseConnected = false;
         let sseTypingActive = false;
         let historyMessageKeys = new Set();
@@ -1536,6 +1643,14 @@
         const menuThemeBtn = document.getElementById('menuThemeBtn');
         const menuLogoutBtn = document.getElementById('menuLogoutBtn');
 
+        const shortcodeSuggestions = document.createElement('div');
+        shortcodeSuggestions.className = 'shortcode-suggestions';
+        document.body.appendChild(shortcodeSuggestions);
+
+        let activeShortcode = null;
+        let activeShortcodeResults = [];
+        let activeShortcodeIndex = -1;
+
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -1554,6 +1669,178 @@
 
         function closeActionMenu() {
             actionMenu?.classList.remove('open');
+        }
+
+        function normalizeShortcode(value = '') {
+            return String(value).trim().replace(/^:+|:+$/g, '').toLowerCase();
+        }
+
+        function searchShortcodes(query = '', limit = 8) {
+            const normalized = normalizeShortcode(query);
+            if (!normalized) return [];
+
+            const matches = [];
+            for (const [shortcode, emoji] of Object.entries(EMOJI_SHORTCODES)) {
+                if (shortcode.includes(normalized)) {
+                    matches.push({ shortcode, emoji });
+                    if (matches.length >= limit) break;
+                }
+            }
+
+            return matches;
+        }
+
+        function getActiveShortcodeMatch(value, cursorPos) {
+            const beforeCursor = String(value || '').slice(0, cursorPos);
+            const match = beforeCursor.match(/(^|\s):([a-z0-9_+-]{1,32})$/i);
+            if (!match) return null;
+
+            return {
+                query: match[2],
+                start: cursorPos - (match[2].length + 1),
+                end: cursorPos,
+            };
+        }
+
+        function getCaretCoordinates(textarea, position) {
+            const style = window.getComputedStyle(textarea);
+            const mirror = document.createElement('div');
+            mirror.style.position = 'absolute';
+            mirror.style.visibility = 'hidden';
+            mirror.style.whiteSpace = 'pre-wrap';
+            mirror.style.wordWrap = 'break-word';
+            mirror.style.left = '-9999px';
+            mirror.style.top = '0';
+            mirror.style.width = `${textarea.clientWidth}px`;
+
+            const copiedStyles = [
+                'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textTransform',
+                'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth',
+                'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'lineHeight', 'textAlign',
+                'direction', 'boxSizing',
+            ];
+
+            copiedStyles.forEach((prop) => {
+                mirror.style[prop] = style[prop];
+            });
+
+            const textBefore = textarea.value.slice(0, position);
+            const textAfter = textarea.value.slice(position);
+            mirror.textContent = textBefore;
+
+            const marker = document.createElement('span');
+            marker.textContent = textAfter[0] || '.';
+            mirror.appendChild(marker);
+
+            document.body.appendChild(mirror);
+            const markerRect = marker.getBoundingClientRect();
+            const mirrorRect = mirror.getBoundingClientRect();
+            document.body.removeChild(mirror);
+
+            return {
+                left: markerRect.left - mirrorRect.left - textarea.scrollLeft,
+                top: markerRect.top - mirrorRect.top - textarea.scrollTop,
+                height: markerRect.height || parseFloat(style.lineHeight) || 20,
+            };
+        }
+
+        function positionShortcodeSuggestions(cursorPos) {
+            const inputRect = messageInput.getBoundingClientRect();
+            const caret = getCaretCoordinates(messageInput, cursorPos);
+            const popupHeight = Math.min(shortcodeSuggestions.scrollHeight || 200, 220);
+            const viewportPadding = 8;
+            const left = Math.min(
+                Math.max(inputRect.left + caret.left, viewportPadding),
+                window.innerWidth - shortcodeSuggestions.offsetWidth - viewportPadding,
+            );
+            let top = inputRect.top + caret.top - popupHeight - 8;
+
+            if (top < viewportPadding) {
+                top = Math.min(
+                    inputRect.top + caret.top + caret.height + 8,
+                    window.innerHeight - popupHeight - viewportPadding,
+                );
+            }
+
+            shortcodeSuggestions.style.left = `${Math.max(left, viewportPadding)}px`;
+            shortcodeSuggestions.style.top = `${Math.max(top, viewportPadding)}px`;
+        }
+
+        function closeShortcodeSuggestions() {
+            activeShortcode = null;
+            activeShortcodeResults = [];
+            activeShortcodeIndex = -1;
+            shortcodeSuggestions.classList.remove('open');
+            shortcodeSuggestions.innerHTML = '';
+        }
+
+        function renderShortcodeSuggestions() {
+            if (!activeShortcode || !activeShortcodeResults.length) {
+                closeShortcodeSuggestions();
+                return;
+            }
+
+            shortcodeSuggestions.innerHTML = '';
+
+            activeShortcodeResults.forEach((result, index) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `shortcode-suggestion${index === activeShortcodeIndex ? ' active' : ''}`;
+                button.innerHTML = `<span class="emoji">${result.emoji}</span><span>:${result.shortcode}</span><span class="token">Tab ↵</span>`;
+                button.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                });
+                button.addEventListener('click', () => {
+                    applyShortcodeSelection(index);
+                });
+                shortcodeSuggestions.appendChild(button);
+            });
+
+            shortcodeSuggestions.classList.add('open');
+            positionShortcodeSuggestions(activeShortcode.end);
+        }
+
+        function applyShortcodeSelection(index) {
+            if (!activeShortcode || !activeShortcodeResults[index]) return;
+
+            const { emoji } = activeShortcodeResults[index];
+            const before = messageInput.value.slice(0, activeShortcode.start);
+            const after = messageInput.value.slice(activeShortcode.end);
+            const nextValue = `${before}${emoji} ${after}`;
+            const nextCursor = before.length + emoji.length + 1;
+
+            messageInput.value = nextValue;
+            messageInput.selectionStart = messageInput.selectionEnd = nextCursor;
+            resizeMessageInput();
+            closeShortcodeSuggestions();
+            messageInput.focus();
+        }
+
+        function updateShortcodeSuggestions() {
+            const cursorPos = messageInput.selectionStart;
+            if (cursorPos !== messageInput.selectionEnd) {
+                closeShortcodeSuggestions();
+                return;
+            }
+
+            const match = getActiveShortcodeMatch(messageInput.value, cursorPos);
+            if (!match) {
+                closeShortcodeSuggestions();
+                return;
+            }
+
+            const results = searchShortcodes(match.query, 8);
+            if (!results.length) {
+                closeShortcodeSuggestions();
+                return;
+            }
+
+            activeShortcode = match;
+            activeShortcodeResults = results;
+            if (activeShortcodeIndex < 0 || activeShortcodeIndex >= results.length) {
+                activeShortcodeIndex = 0;
+            }
+            renderShortcodeSuggestions();
         }
 
         // Initialize theme on load
@@ -1680,6 +1967,21 @@
             return queued > 0 ? `Online · queue ${queued}` : 'Online';
         }
 
+        function clearQueueRetryTimer() {
+            if (queueRetryTimer) {
+                clearTimeout(queueRetryTimer);
+                queueRetryTimer = null;
+            }
+        }
+
+        function scheduleQueueRetry(delayMs = QUEUE_RETRY_DELAY_MS) {
+            if (queueRetryTimer) return;
+            queueRetryTimer = setTimeout(() => {
+                queueRetryTimer = null;
+                processQueue();
+            }, delayMs);
+        }
+
         function updateTypingIndicator() {
             const hasQueued = currentSessionKey ? queueCountForSession(currentSessionKey) > 0 : false;
             typingIndicator.classList.toggle('active', sseTypingActive || sending || hasQueued);
@@ -1691,7 +1993,20 @@
                 if (!response.ok) return;
                 const health = await response.json();
                 if (health?.gatewayWsConnected === false) {
-                    setOnlineState(false, 'Gateway handshake failed (backend disconnected)');
+                    const reconnecting = Number(health?.gatewayWsReconnectAttempts || 0) > 0;
+                    setOnlineState(false, reconnecting ? 'Reconnecting to gateway…' : 'Gateway handshake failed (backend disconnected)');
+                    if (queueCountForSession(currentSessionKey) > 0) {
+                        scheduleQueueRetry();
+                    }
+                    return;
+                }
+
+                if (currentSessionKey) {
+                    setOnlineState(true, queueStatusText(currentSessionKey));
+                    if (!sending && queueCountForSession(currentSessionKey) > 0) {
+                        clearQueueRetryTimer();
+                        processQueue();
+                    }
                 }
             } catch {
                 // keep current state
@@ -2022,6 +2337,9 @@
 
             eventSource.onopen = () => {
                 sseConnected = true;
+                if (currentSessionKey) {
+                    setOnlineState(true, queueStatusText(currentSessionKey));
+                }
                 updateTypingIndicator();
                 console.log('📡 SSE connected');
             };
@@ -2145,26 +2463,33 @@
             if (sending || sendQueue.length === 0) return;
             if (!currentSessionKey) return;
 
-            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === currentSessionKey);
+            const activeSessionKey = currentSessionKey;
+            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === activeSessionKey);
             if (nextIndex < 0) return;
 
+            clearQueueRetryTimer();
             sending = true;
+            let sendFailed = false;
             const [next] = sendQueue.splice(nextIndex, 1);
             savePendingQueue(sendQueue);
             updateTypingIndicator();
 
-            setOnlineState(true, queueStatusText(currentSessionKey));
+            setOnlineState(true, queueStatusText(activeSessionKey));
 
             try {
-                const response = await apiFetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                const response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: next.message }),
                 });
                 const data = await response.json();
 
-                if (!data?.success) {
-                    addMessage('system', data?.error || 'Send failed');
+                if (!response.ok || !data?.success) {
+                    sendFailed = true;
+                    const errorText = data?.error || response.statusText || 'Send failed';
+                    addMessage('system', errorText);
+                    sendQueue.unshift(next);
+                    savePendingQueue(sendQueue);
                 } else {
                     const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
                     const text = hasSanitizedResponse
@@ -2175,20 +2500,30 @@
                         if (text && text.trim()) rememberLocalAssistantEcho(text);
                         addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
                     }
-                    
+
                     // Remove typing indicator after getting response
                     await pollSessionHistory();
                 }
             } catch (error) {
+                sendFailed = true;
                 console.error('Send error:', error);
                 addMessage('system', `Send failed: ${error.message}`);
                 sendQueue.unshift(next);
                 savePendingQueue(sendQueue);
             } finally {
                 sending = false;
-                const remaining = queueCountForSession(currentSessionKey);
+                const remaining = queueCountForSession(activeSessionKey);
                 updateTypingIndicator();
-                setOnlineState(true, queueStatusText(currentSessionKey));
+
+                if (sendFailed) {
+                    const retryText = remaining > 0 ? `Offline · retrying (${remaining} queued)` : 'Offline';
+                    setOnlineState(false, retryText);
+                    scheduleQueueRetry();
+                    refreshBackendHealth();
+                    return;
+                }
+
+                setOnlineState(true, queueStatusText(activeSessionKey));
                 if (remaining > 0) processQueue();
             }
         }
@@ -2280,6 +2615,7 @@
 
             // Close emoji picker when sending a message
             emojiPicker.classList.remove('open');
+            closeShortcodeSuggestions();
 
             // Handle slash commands immediately (bypass queue)
             if (messageText.startsWith('/')) {
@@ -2380,13 +2716,53 @@
             emojiPicker.classList.toggle('open');
         });
         
-        document.addEventListener('click', () => {
+        document.addEventListener('click', (event) => {
             emojiPicker.classList.remove('open');
             closeActionMenu();
+
+            const clickedInsideSuggestions = shortcodeSuggestions.contains(event.target);
+            const clickedInput = event.target === messageInput;
+            if (!clickedInsideSuggestions && !clickedInput) {
+                closeShortcodeSuggestions();
+            }
         });
-        
-        messageInput.addEventListener('input', resizeMessageInput);
+
+        messageInput.addEventListener('input', () => {
+            resizeMessageInput();
+            updateShortcodeSuggestions();
+        });
+        messageInput.addEventListener('click', updateShortcodeSuggestions);
+        messageInput.addEventListener('keyup', updateShortcodeSuggestions);
+
         messageInput.addEventListener('keydown', (e) => {
+            if (shortcodeSuggestions.classList.contains('open')) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeShortcodeIndex = (activeShortcodeIndex + 1) % activeShortcodeResults.length;
+                    renderShortcodeSuggestions();
+                    return;
+                }
+
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeShortcodeIndex = (activeShortcodeIndex - 1 + activeShortcodeResults.length) % activeShortcodeResults.length;
+                    renderShortcodeSuggestions();
+                    return;
+                }
+
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    applyShortcodeSelection(activeShortcodeIndex >= 0 ? activeShortcodeIndex : 0);
+                    return;
+                }
+
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeShortcodeSuggestions();
+                    return;
+                }
+            }
+
             if (e.key !== 'Enter') return;
             if (isLikelyMobile()) {
                 // Mobile: Enter inserts newline, Send button sends
@@ -2396,6 +2772,12 @@
             if (!e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (shortcodeSuggestions.classList.contains('open') && activeShortcode) {
+                positionShortcodeSuggestions(activeShortcode.end);
             }
         });
 
