@@ -953,6 +953,7 @@
             <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
                 <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
                 <button type="button" id="menuThemeBtn" role="menuitem">🌙 Toggle theme</button>
+                <button type="button" id="menuBackendBtn" role="menuitem">🌐 Backend URL</button>
                 <button type="button" id="menuLogoutBtn" role="menuitem">⎋ Logout</button>
             </div>
         </div>
@@ -1728,6 +1729,88 @@
             return normalized;
         }
 
+        function backendHealthUrl(baseUrl) {
+            return `${baseUrl}/api/health`;
+        }
+
+        async function testBackendConnection(baseUrl) {
+            const normalized = normalizeBaseUrl(baseUrl);
+            if (!normalized) {
+                return { ok: false, message: `Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}` };
+            }
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+
+            try {
+                const response = await fetch(backendHealthUrl(normalized), {
+                    method: 'GET',
+                    credentials: 'include',
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        return { ok: false, message: 'Backend API not found (404). Check the backend URL.' };
+                    }
+                    if (response.status >= 500) {
+                        return { ok: false, message: 'Backend unavailable (5xx). Server responded with an error.' };
+                    }
+                    return { ok: false, message: `Connection test failed (${response.status}).` };
+                }
+
+                return { ok: true, message: `Connection OK: ${normalized}` };
+            } catch (error) {
+                const message = String(error?.message || '').toLowerCase();
+                if (error?.name === 'AbortError') {
+                    return { ok: false, message: 'Connection test timed out after 8 seconds.' };
+                }
+                if (message.includes('failed to fetch') || message.includes('network')) {
+                    return { ok: false, message: `Backend unreachable (${normalized}). Check URL, network, or certificate.` };
+                }
+                return { ok: false, message: `Connection test failed: ${error?.message || 'unknown error'}` };
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function reconnectToBackendWithStatus() {
+            stopHistoryPolling();
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            sseConnected = false;
+            sseTypingActive = false;
+            updateTypingIndicator();
+            setOnlineState(false, 'Connecting...');
+            await loadSessions();
+            connectEventSource();
+            await refreshBackendHealth();
+        }
+
+        async function openBackendSettings() {
+            const current = getApiBaseUrl();
+            const entered = window.prompt(
+                `Backend URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`,
+                current || SANITIZED_SERVER_EXAMPLE_URL,
+            );
+            if (entered === null) return;
+
+            const normalized = normalizeBaseUrl(entered);
+            if (!normalized) {
+                window.alert(`Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+                return;
+            }
+
+            const result = await testBackendConnection(normalized);
+            const save = window.confirm(`${result.ok ? '✅' : '❌'} ${result.message}\n\nSave this backend URL?`);
+            if (!save) return;
+
+            setApiBaseUrl(normalized);
+            await reconnectToBackendWithStatus();
+        }
+
         function apiUrl(path) {
             const base = getApiBaseUrl();
             if (!base) return path;
@@ -1831,6 +1914,7 @@
         const actionMenu = document.getElementById('actionMenu');
         const menuSoundBtn = document.getElementById('menuSoundBtn');
         const menuThemeBtn = document.getElementById('menuThemeBtn');
+        const menuBackendBtn = document.getElementById('menuBackendBtn');
         const menuLogoutBtn = document.getElementById('menuLogoutBtn');
 
         const shortcodeSuggestions = document.createElement('div');
@@ -3091,6 +3175,10 @@
         menuThemeBtn?.addEventListener('click', () => {
             closeActionMenu();
             toggleTheme();
+        });
+        menuBackendBtn?.addEventListener('click', async () => {
+            closeActionMenu();
+            await openBackendSettings();
         });
         menuLogoutBtn?.addEventListener('click', () => {
             closeActionMenu();
