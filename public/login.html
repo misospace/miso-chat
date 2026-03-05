@@ -107,24 +107,63 @@
       oidcBtn.href = oidcTarget.toString();
     }
 
+    function applyAuthOptions(opts = {}) {
+      const mode = String(opts.authMode || '').toLowerCase();
+      const localEnabled = typeof opts.localAuthEnabled === 'boolean'
+        ? opts.localAuthEnabled
+        : mode === 'local';
+      const oidcEnabled = typeof opts.oidcEnabled === 'boolean'
+        ? opts.oidcEnabled
+        : mode === 'oidc';
+      const requiresAuth = typeof opts.requiresAuth === 'boolean'
+        ? opts.requiresAuth
+        : (mode ? mode !== 'none' : true);
+
+      if (!requiresAuth || mode === 'none') {
+        window.location.replace(returnTo || '/');
+        return;
+      }
+
+      if (!localEnabled) {
+        localSection.style.display = 'none';
+        hintText.textContent = 'Local username/password login is disabled.';
+      }
+
+      if (oidcEnabled) {
+        oidcSection.style.display = 'block';
+        const label = opts.oidcLabel ? `Continue with ${opts.oidcLabel}` : 'Continue with OIDC';
+        oidcBtn.textContent = label;
+      }
+
+      if (mode === 'oidc' && oidcEnabled) {
+        window.location.replace(oidcBtn.href);
+      }
+    }
+
     (async () => {
+      let opts = null;
+
       try {
-        const res = await fetch('/api/login-options');
-        const opts = await res.json();
-
-        if (!opts.localAuthEnabled) {
-          localSection.style.display = 'none';
-          hintText.textContent = 'Local username/password login is disabled.';
-        }
-
-        if (opts.oidcEnabled) {
-          oidcSection.style.display = 'block';
-          const label = opts.oidcLabel ? `Continue with ${opts.oidcLabel}` : 'Continue with OIDC';
-          oidcBtn.textContent = label;
+        const configRes = await fetch('/api/config', { credentials: 'include' });
+        if (configRes.ok) {
+          opts = await configRes.json();
         }
       } catch (e) {
-        // fail safe: leave local login visible
+        // ignore and fall back
       }
+
+      if (!opts) {
+        try {
+          const legacyRes = await fetch('/api/login-options', { credentials: 'include' });
+          if (legacyRes.ok) {
+            opts = await legacyRes.json();
+          }
+        } catch (e) {
+          // fail safe: leave local login visible
+        }
+      }
+
+      if (opts) applyAuthOptions(opts);
     })();
   </script>
 </body>

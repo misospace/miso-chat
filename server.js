@@ -21,8 +21,19 @@ const { reactions } = require('./lib/db');
 const app = express();
 const server = http.createServer(app);
 
-const oidcEnabled = process.env.OIDC_ENABLED === 'true';
-const localAuthEnabled = process.env.LOCAL_AUTH_ENABLED !== 'false';
+const oidcEnabledByEnv = process.env.OIDC_ENABLED === 'true';
+const localAuthEnabledByEnv = process.env.LOCAL_AUTH_ENABLED !== 'false';
+const explicitAuthMode = String(process.env.AUTH_MODE || '').trim().toLowerCase();
+const authMode = (() => {
+  if (explicitAuthMode === 'none' || explicitAuthMode === 'local' || explicitAuthMode === 'oidc') {
+    return explicitAuthMode;
+  }
+  if (oidcEnabledByEnv) return 'oidc';
+  if (localAuthEnabledByEnv) return 'local';
+  return 'none';
+})();
+const oidcEnabled = authMode === 'oidc';
+const localAuthEnabled = authMode === 'local';
 const MAX_CHAT_MESSAGE_LENGTH = (() => {
   const parsed = Number(process.env.MAX_CHAT_MESSAGE_LENGTH || 4000);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 4000;
@@ -320,6 +331,7 @@ setInterval(() => {
 }, 60 * 1000).unref?.();
 
 const isAuthenticated = (req, res, next) => {
+  if (authMode === 'none') return next();
   if (req.isAuthenticated()) return next();
 
   if (requestWantsJson(req)) {
@@ -333,19 +345,36 @@ const isAuthenticated = (req, res, next) => {
   return res.redirect(`/login?return_to=${returnTo}`);
 };
 
+function getOidcLabel() {
+  return process.env.OIDC_ISSUER_LABEL
+    || process.env.OIDC_PROVIDER_NAME
+    || (process.env.OIDC_ISSUER ? String(process.env.OIDC_ISSUER).replace(/^https?:\/\//, '').replace(/\/.*/, '') : 'OIDC');
+}
+
 // Login
 app.get('/login', (req, res) => {
+  const returnTo = getReturnTo(req, '/');
+
+  if (authMode === 'none') {
+    return res.redirect(returnTo);
+  }
+
+  if (authMode === 'oidc') {
+    const encodedReturnTo = encodeURIComponent(returnTo);
+    const mobile = req.query?.mobile === '1' ? '&mobile=1' : '';
+    return res.redirect(`/auth/oidc?return_to=${encodedReturnTo}${mobile}`);
+  }
+
   return res.sendFile(__dirname + '/public/login.html');
 });
 
 app.get('/api/login-options', (req, res) => {
-  const issuerLabel = process.env.OIDC_ISSUER_LABEL
-    || process.env.OIDC_PROVIDER_NAME
-    || (process.env.OIDC_ISSUER ? String(process.env.OIDC_ISSUER).replace(/^https?:\/\//, '').replace(/\/.*/, '') : 'OIDC');
   res.json({
+    authMode,
+    requiresAuth: authMode !== 'none',
     localAuthEnabled,
     oidcEnabled,
-    oidcLabel: issuerLabel,
+    oidcLabel: getOidcLabel(),
   });
 });
 
@@ -470,7 +499,13 @@ app.post('/api/mobile-auth/consume', (req, res) => {
 
 // Protected routes
 app.get('/', isAuthenticated, (req, res) => res.sendFile(__dirname + '/public/index.html'));
-app.get('/api/auth', (req, res) => res.json({ authenticated: req.isAuthenticated(), user: req.user, oidc: process.env.OIDC_ENABLED === 'true' }));
+app.get('/api/auth', (req, res) => res.json({
+  authenticated: authMode === 'none' ? true : req.isAuthenticated(),
+  user: req.user,
+  oidc: oidcEnabled,
+  authMode,
+  requiresAuth: authMode !== 'none',
+}));
 
 let gatewayWsLastError = '';
 let gatewayWsLastClose = null;
@@ -572,11 +607,16 @@ const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT
 const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
 const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
 
-app.get('/api/config', isAuthenticated, (req, res) => {
+app.get('/api/config', (req, res) => {
   res.json({
     title: APP_TITLE,
     assistantName: CHAT_DISPLAY_NAME,
     defaultSessionKey: DEFAULT_SESSION_KEY,
+    authMode,
+    requiresAuth: authMode !== 'none',
+    localAuthEnabled,
+    oidcEnabled,
+    oidcLabel: getOidcLabel(),
   });
 });
 
