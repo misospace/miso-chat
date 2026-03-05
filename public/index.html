@@ -2036,13 +2036,104 @@
             }
         }
 
+        function isExpectedMobileAuthCallback(url) {
+            if (!url) return false;
+            const normalizedPath = String(url.pathname || '').replace(/\/+$/, '').toLowerCase();
+            if (url.protocol === 'misochat:' && (url.host === 'auth' || normalizedPath === '/auth/callback' || normalizedPath === '/callback')) {
+                return true;
+            }
+
+            return normalizedPath === '/auth/callback' || normalizedPath.endsWith('/auth/callback') || normalizedPath === '/callback';
+        }
+
+        function parseMobileCallbackHashParams(url) {
+            const rawHash = String(url?.hash || '').replace(/^#/, '').trim();
+            if (!rawHash) return new URLSearchParams();
+
+            const queryString = rawHash.includes('?')
+                ? rawHash.slice(rawHash.indexOf('?') + 1)
+                : rawHash;
+
+            return new URLSearchParams(queryString);
+        }
+
+        function extractMobileAuthToken(url) {
+            if (!url) return '';
+            const fromQuery = url.searchParams.get('mobile_token');
+            if (fromQuery) return fromQuery;
+
+            // Some providers place callback params in hash fragments.
+            const hashParams = parseMobileCallbackHashParams(url);
+            return hashParams.get('mobile_token') || '';
+        }
+
+        function extractMobileBackendFromUrl(url) {
+            if (!url) return '';
+            const fromQuery = url.searchParams.get('backend');
+            if (fromQuery) return fromQuery;
+
+            const hashParams = parseMobileCallbackHashParams(url);
+            return hashParams.get('backend') || '';
+        }
+
+        async function closeNativeBrowserIfOpen() {
+            const browser = window.Capacitor?.Plugins?.Browser;
+            if (browser && typeof browser.close === 'function') {
+                try { await browser.close(); } catch {}
+            }
+        }
+
+        async function recoverFromMobileAuthCallbackFailure(reason, error) {
+            console.error(`[DeepLink] ${reason}`, error || '');
+            setOnlineState(false, 'Login callback failed');
+
+            const retry = window.confirm('Login callback failed. Retry sign-in now?');
+            if (!retry) return;
+
+            try {
+                await startAuthFlow();
+            } catch (retryError) {
+                console.error('[DeepLink] failed to restart auth flow', retryError);
+                window.alert('Could not restart login flow. Please reopen the app and try again.');
+            }
+        }
+
+        async function handleMobileAuthCallback(urlString, { reloadOnSuccess = false } = {}) {
+            const url = new URL(urlString);
+            if (!isExpectedMobileAuthCallback(url)) return false;
+
+            const backend = extractMobileBackendFromUrl(url);
+            if (backend) setApiBaseUrl(backend);
+
+            const token = extractMobileAuthToken(url);
+            if (!token) {
+                await recoverFromMobileAuthCallbackFailure('auth callback missing mobile_token');
+                return true;
+            }
+
+            try {
+                await consumeMobileAuthToken(token);
+                await closeNativeBrowserIfOpen();
+
+                if (reloadOnSuccess) {
+                    window.location.reload();
+                }
+                return true;
+            } catch (error) {
+                await recoverFromMobileAuthCallbackFailure('auth callback token consume failed', error);
+                return true;
+            }
+        }
+
         async function consumeMobileAuthTokenFromUrl() {
             const current = new URL(window.location.href);
-            const token = current.searchParams.get('mobile_token');
+            const token = extractMobileAuthToken(current);
             if (!token) return;
 
             try {
                 await consumeMobileAuthToken(token);
+            } catch (error) {
+                await recoverFromMobileAuthCallbackFailure('url token consume failed', error);
             } finally {
                 current.searchParams.delete('mobile_token');
                 window.history.replaceState({}, '', current.toString());
@@ -3459,32 +3550,10 @@
                 if (appPlugin && typeof appPlugin.addListener === 'function') {
                     appPlugin.addListener('appUrlOpen', async (data) => {
                         try {
-                            const url = new URL(data.url);
-                            const isExpectedCallback =
-                                (url.host === 'auth' && url.pathname === '/callback')
-                                || url.pathname === '/auth/callback'
-                                || url.pathname.endsWith('/auth/callback');
-                            if (!isExpectedCallback) return;
-
-                            const backend = url.searchParams.get('backend');
-                            if (backend) setApiBaseUrl(backend);
-
-                            const token = url.searchParams.get('mobile_token');
-                            if (!token) {
-                                console.warn('[DeepLink] auth callback missing mobile_token');
-                                return;
-                            }
-
-                            await consumeMobileAuthToken(token);
-
-                            const browser = window.Capacitor?.Plugins?.Browser;
-                            if (browser && typeof browser.close === 'function') {
-                                try { await browser.close(); } catch {}
-                            }
-
-                            window.location.reload();
+                            await handleMobileAuthCallback(data.url, { reloadOnSuccess: true });
                         } catch (error) {
                             console.error('[DeepLink] callback handling failed', error);
+                            await recoverFromMobileAuthCallbackFailure('unexpected appUrlOpen handler error', error);
                         }
                     });
                 } else {
