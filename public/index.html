@@ -1737,7 +1737,7 @@
         function loginReturnToUrl() {
             const backend = getApiBaseUrl();
             if (isLikelyMobile()) {
-                const appReturn = new URL('capacitor://localhost/auth/callback');
+                const appReturn = new URL('misochat://auth/callback');
                 if (backend) {
                     appReturn.searchParams.set('backend', backend);
                 }
