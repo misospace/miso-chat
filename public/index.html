@@ -953,6 +953,8 @@
             <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
                 <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
                 <button type="button" id="menuThemeBtn" role="menuitem">🌙 Toggle theme</button>
+                <button type="button" id="menuBackendBtn" role="menuitem">🌐 Backend URL</button>
+                <button type="button" id="menuBackendTestBtn" role="menuitem">🩺 Test backend connection</button>
                 <button type="button" id="menuLogoutBtn" role="menuitem">⎋ Logout</button>
             </div>
         </div>
@@ -1795,6 +1797,91 @@
             }
         }
 
+        function describeBackendTarget(baseUrl = getApiBaseUrl()) {
+            const normalized = normalizeBaseUrl(baseUrl);
+            return normalized || window.location.origin;
+        }
+
+        async function testBackendConnection(baseUrl = getApiBaseUrl()) {
+            const normalized = normalizeBaseUrl(baseUrl);
+            const endpoint = normalized ? `${normalized}/api/health` : '/api/health';
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 7000);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    credentials: 'include',
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    return {
+                        ok: false,
+                        backend: describeBackendTarget(normalized),
+                        message: `HTTP ${response.status}`,
+                    };
+                }
+
+                const payload = await response.json().catch(() => ({}));
+                return {
+                    ok: true,
+                    backend: describeBackendTarget(normalized),
+                    payload,
+                };
+            } catch (err) {
+                return {
+                    ok: false,
+                    backend: describeBackendTarget(normalized),
+                    message: err?.name === 'AbortError' ? 'Request timed out' : (err?.message || 'Network error'),
+                };
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function runBackendConnectionTest(options = {}) {
+            const result = await testBackendConnection(options.baseUrl);
+            if (result.ok) {
+                const gatewayConnected = result.payload?.gatewayWsConnected;
+                const gatewaySummary = gatewayConnected === false ? 'Gateway disconnected' : 'Gateway connected';
+                window.alert(`✅ Backend reachable: ${result.backend}\n${gatewaySummary}`);
+                return true;
+            }
+
+            window.alert(`❌ Backend test failed for ${result.backend}\n${result.message || 'Unknown error'}`);
+            return false;
+        }
+
+        async function openBackendSettings() {
+            const current = getApiBaseUrl();
+            const entered = window.prompt(
+                `Set your Miso server URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`,
+                current || SANITIZED_SERVER_EXAMPLE_URL,
+            );
+
+            if (entered === null) return;
+
+            const normalized = setApiBaseUrl(entered);
+            if (!normalized) {
+                window.alert(`That URL does not look valid. Please enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+                return;
+            }
+
+            const reachable = await runBackendConnectionTest({ baseUrl: normalized });
+            if (!reachable) {
+                const keep = window.confirm('Keep this backend URL anyway?');
+                if (!keep) {
+                    setApiBaseUrl(current);
+                    return;
+                }
+            }
+
+            await loadConfig();
+            await loadSessions();
+            await refreshBackendHealth();
+        }
+
         async function consumeMobileAuthTokenFromUrl() {
             const current = new URL(window.location.href);
             const token = current.searchParams.get('mobile_token');
@@ -1831,6 +1918,8 @@
         const actionMenu = document.getElementById('actionMenu');
         const menuSoundBtn = document.getElementById('menuSoundBtn');
         const menuThemeBtn = document.getElementById('menuThemeBtn');
+        const menuBackendBtn = document.getElementById('menuBackendBtn');
+        const menuBackendTestBtn = document.getElementById('menuBackendTestBtn');
         const menuLogoutBtn = document.getElementById('menuLogoutBtn');
 
         const shortcodeSuggestions = document.createElement('div');
@@ -3091,6 +3180,14 @@
         menuThemeBtn?.addEventListener('click', () => {
             closeActionMenu();
             toggleTheme();
+        });
+        menuBackendBtn?.addEventListener('click', async () => {
+            closeActionMenu();
+            await openBackendSettings();
+        });
+        menuBackendTestBtn?.addEventListener('click', async () => {
+            closeActionMenu();
+            await runBackendConnectionTest();
         });
         menuLogoutBtn?.addEventListener('click', () => {
             closeActionMenu();
