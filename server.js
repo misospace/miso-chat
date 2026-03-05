@@ -232,9 +232,47 @@ if (oidcEnabled) {
   ));
 }
 
+const allowedReturnToSchemes = new Set(['http:', 'https:', 'capacitor:', 'ionic:']);
+
+function getReturnTo(req, fallback = '/') {
+  const raw = typeof req.body?.return_to === 'string' && req.body.return_to.trim()
+    ? req.body.return_to.trim()
+    : (typeof req.query?.return_to === 'string' && req.query.return_to.trim()
+      ? req.query.return_to.trim()
+      : '');
+
+  if (!raw) return fallback;
+  if (raw.startsWith('/')) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    if (!allowedReturnToSchemes.has(parsed.protocol)) return fallback;
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+function requestWantsJson(req) {
+  if (req.path.startsWith('/api/')) return true;
+  if (req.xhr) return true;
+
+  const acceptHeader = String(req.headers.accept || '').toLowerCase();
+  return acceptHeader.includes('application/json');
+}
+
 const isAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) return next();
-  res.redirect('/login');
+
+  if (requestWantsJson(req)) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      loginUrl: '/login',
+    });
+  }
+
+  const returnTo = encodeURIComponent(getReturnTo(req, req.originalUrl || '/'));
+  return res.redirect(`/login?return_to=${returnTo}`);
 };
 
 // Login
@@ -255,18 +293,41 @@ app.get('/api/login-options', (req, res) => {
 
 app.post('/login', (req, res, next) => {
   if (!localAuthEnabled) {
-    return res.redirect('/login?error=local_disabled');
+    const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+    return res.redirect(`/login?error=local_disabled&return_to=${returnTo}`);
   }
+
+  const returnTo = getReturnTo(req, '/');
+  const failureReturnTo = encodeURIComponent(returnTo);
   return passport.authenticate('local', {
-    successRedirect: '/',
-    failureRedirect: '/login?error=invalid',
+    successRedirect: returnTo,
+    failureRedirect: `/login?error=invalid&return_to=${failureReturnTo}`,
   })(req, res, next);
 });
 app.get('/auth/oidc', (req, res, next) => {
   if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
+  req.session.oidcReturnTo = getReturnTo(req, '/');
   return passport.authenticate('oidc')(req, res, next);
 });
-app.get('/auth/oidc/callback', passport.authenticate('oidc', { successRedirect: '/', failureRedirect: '/login?error=oidc_failed' }));
+app.get('/auth/oidc/callback', (req, res, next) => {
+  passport.authenticate('oidc', (err, user) => {
+    if (err || !user) {
+      const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+      return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
+    }
+
+    return req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+        return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
+      }
+
+      const storedReturnTo = req.session?.oidcReturnTo;
+      if (req.session) delete req.session.oidcReturnTo;
+      return res.redirect(getReturnTo({ query: { return_to: storedReturnTo } }, '/'));
+    });
+  })(req, res, next);
+});
 app.post('/logout', (req, res) => {
   req.logout((logoutErr) => {
     if (logoutErr) {
@@ -1162,18 +1223,28 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           content = m.content?.text || m.text || JSON.stringify(m.content || '');
         }
 
+        const messageId =
+          m.messageId ||
+          m.message_id ||
+          m.id ||
+          m.externalMessageId ||
+          m.external_id ||
+          null;
+
         const text = role === 'assistant' ? sanitizeAssistantText(content) : content;
         const hasContent = typeof text === 'string' && text.trim().length > 0;
         const hasToolCalls = toolCalls.length > 0;
         if (!hasContent && !hasToolCalls) return null;
 
-        // Get reaction counts for this message (match by timestamp prefix)
+        // Get reaction counts for this message (match by timestamp prefix or gateway message id)
         const timestamp = m.timestamp;
         const messageReactions = [];
-        if (timestamp && sessionReactions) {
-          // Look for reactions with timestamp prefix (format: history:timestamp:role:...)
+        if (sessionReactions) {
           for (const [msgId, emojis] of Object.entries(sessionReactions)) {
-            if (msgId.startsWith(`history:${timestamp}:`) || msgId.startsWith(`reply:${timestamp}:`) || msgId.startsWith(`queued:${timestamp}`)) {
+            const matchesTimestamp = timestamp
+              && (msgId.startsWith(`history:${timestamp}:`) || msgId.startsWith(`reply:${timestamp}:`) || msgId.startsWith(`queued:${timestamp}`));
+            const matchesGatewayId = messageId && msgId === `gateway:${messageId}`;
+            if (matchesTimestamp || matchesGatewayId) {
               for (const [emoji, users] of Object.entries(emojis)) {
                 messageReactions.push({ emoji, count: users.length });
               }
@@ -1185,6 +1256,7 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           role,
           content: hasContent ? text : (hasToolCalls ? ' ' : ''),
           timestamp: m.timestamp,
+          ...(messageId ? { messageId: String(messageId) } : {}),
           ...(hasToolCalls ? { toolCalls } : {}),
           ...(messageReactions.length > 0 ? { reactions: messageReactions } : {}),
         };

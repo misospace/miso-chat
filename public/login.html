@@ -64,6 +64,7 @@
       <input id="username" name="username" placeholder="Username" autocomplete="username" />
       <label for="password">Password</label>
       <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" />
+      <input id="returnToInput" type="hidden" name="return_to" value="" />
       <button class="btn btn-primary" type="submit">Login</button>
     </div>
 
@@ -83,6 +84,7 @@
     const oidcSection = document.getElementById('oidcSection');
     const oidcBtn = document.getElementById('oidcBtn');
     const hintText = document.getElementById('hintText');
+    const returnToInput = document.getElementById('returnToInput');
 
     const errors = {
       invalid: 'Invalid username or password.',
@@ -93,6 +95,12 @@
     if (error && errors[error]) {
       errorMsg.textContent = errors[error];
       errorMsg.style.display = 'block';
+    }
+
+    const returnTo = params.get('return_to') || '';
+    if (returnTo) {
+      returnToInput.value = returnTo;
+      oidcBtn.href = `/auth/oidc?return_to=${encodeURIComponent(returnTo)}`;
     }
 
     (async () => {

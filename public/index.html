@@ -1555,6 +1555,7 @@
         }
 
         let messageReactions = loadReactions();
+        const reactionRowsByKey = new Map();
         let unreadNotifications = 0;
         let titleBlinkInterval = null;
         const ORIGINAL_TITLE = 'OpenClaw Chat';
@@ -1565,6 +1566,131 @@
         const ASSISTANT_NAME_STORAGE_KEY = 'openclaw.assistantName';
         const API_BASE_STORAGE_KEY = 'openclaw.apiBaseUrl';
         let configuredAssistantName = localStorage.getItem(ASSISTANT_NAME_STORAGE_KEY) || 'Assistant';
+
+        function normalizeReactionEmoji(rawEmoji) {
+            const value = String(rawEmoji || '').trim();
+            if (!value) return '';
+            const shortcodeMatch = value.match(/^:([^:]+):$/);
+            if (!shortcodeMatch) return value;
+
+            const shortcode = shortcodeMatch[1].toLowerCase();
+            const normalized = shortcode.replace(/-/g, '_');
+            return EMOJI_SHORTCODES[shortcode]
+                || EMOJI_SHORTCODES[normalized]
+                || EMOJI_SHORTCODES[normalized.replace(/^thumbsup$/, 'thumbs_up')]
+                || EMOJI_SHORTCODES[normalized.replace(/^thumbsdown$/, 'thumbs_down')]
+                || value;
+        }
+
+        function parseGatewayReactionEvent(text) {
+            const raw = String(text || '').trim();
+            if (!raw) return null;
+
+            const matchers = [
+                {
+                    channel: 'telegram',
+                    regex: /^Telegram reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+on msg\s+([^\s]+)$/i,
+                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
+                },
+                {
+                    channel: 'slack',
+                    regex: /^Slack reaction (added|removed):\s+(:[^\s]+:)\s+by\s+(.+?)\s+in\s+.+?\s+msg\s+([^\s]+)(?:\s+from\s+.+)?$/i,
+                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
+                },
+                {
+                    channel: 'discord',
+                    regex: /^Discord reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+on\s+.+?\s+msg\s+([^\s]+)(?:\s+from\s+.+)?$/i,
+                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
+                },
+                {
+                    channel: 'signal',
+                    regex: /^Signal reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+msg\s+([^\s]+)$/i,
+                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
+                },
+            ];
+
+            for (const matcher of matchers) {
+                const matched = raw.match(matcher.regex);
+                if (!matched) continue;
+                const parsed = matcher.toEvent(matched);
+                if (!parsed?.messageId || !parsed?.emoji) return null;
+                return {
+                    channel: matcher.channel,
+                    action: parsed.action,
+                    emoji: parsed.emoji,
+                    actor: parsed.actor,
+                    messageId: String(parsed.messageId),
+                    raw,
+                };
+            }
+
+            return null;
+        }
+
+        function updateReactionRow(row, key) {
+            row.querySelectorAll('.reaction-btn').forEach((node) => {
+                const nodeEmoji = node.querySelector('span:first-child')?.textContent;
+                if (!nodeEmoji) return;
+                const nodeCount = messageReactions[key]?.[nodeEmoji] || 0;
+                const nodeHasReaction = nodeCount > 0;
+
+                node.classList.toggle('active', nodeHasReaction);
+                node.setAttribute('aria-pressed', nodeHasReaction ? 'true' : 'false');
+
+                let countSpan = node.querySelector('.reaction-count');
+                if (nodeCount > 0) {
+                    if (!countSpan) {
+                        countSpan = document.createElement('span');
+                        countSpan.className = 'reaction-count';
+                        node.appendChild(countSpan);
+                    }
+                    countSpan.textContent = nodeCount;
+                } else if (countSpan) {
+                    countSpan.remove();
+                }
+            });
+        }
+
+        function syncReactionRows(key) {
+            const rows = reactionRowsByKey.get(key);
+            if (!rows || rows.size === 0) return;
+            for (const row of [...rows]) {
+                if (!row.isConnected) {
+                    rows.delete(row);
+                    continue;
+                }
+                updateReactionRow(row, key);
+            }
+            if (rows.size === 0) reactionRowsByKey.delete(key);
+        }
+
+        function applyGatewayReactionEvent(event) {
+            if (!event?.messageId || !event?.emoji) return false;
+            const key = reactionKey('miso', '', `gateway:${event.messageId}`);
+            const existingRows = reactionRowsByKey.get(key);
+            if (!existingRows || existingRows.size === 0) return false;
+
+            if (!messageReactions[key]) messageReactions[key] = {};
+            const currentCount = messageReactions[key][event.emoji] || 0;
+
+            if (event.action === 'removed') {
+                if (currentCount <= 1) {
+                    delete messageReactions[key][event.emoji];
+                } else {
+                    messageReactions[key][event.emoji] = currentCount - 1;
+                }
+            } else {
+                messageReactions[key][event.emoji] = currentCount + 1;
+            }
+
+            if (Object.keys(messageReactions[key]).length === 0) {
+                delete messageReactions[key];
+            }
+
+            saveReactions(messageReactions);
+            syncReactionRows(key);
+            return true;
+        }
 
         function isLikelyMobile() {
             return window.matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
@@ -1608,9 +1734,40 @@
             return `${base}${path}`;
         }
 
-        function apiFetch(path, options = undefined) {
-            return fetch(apiUrl(path), options);
+        function loginReturnToUrl() {
+            const current = new URL(window.location.href);
+            const backend = getApiBaseUrl();
+            if (backend) {
+                current.searchParams.set('backend', backend);
+            }
+            return current.toString();
         }
+
+        function loginUrl() {
+            const target = new URL(apiUrl('/login'), window.location.href);
+            target.searchParams.set('return_to', loginReturnToUrl());
+            return target.toString();
+        }
+
+        function handleAuthRequired() {
+            window.location.assign(loginUrl());
+            throw new Error('Authentication required');
+        }
+
+        async function apiFetch(path, options = undefined) {
+            const response = await fetch(apiUrl(path), {
+                credentials: 'include',
+                ...options,
+            });
+
+            if (response.status === 401) {
+                handleAuthRequired();
+            }
+
+            return response;
+        }
+
+        const SANITIZED_SERVER_EXAMPLE_URL = 'https://miso-chat.example.com';
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
@@ -1618,13 +1775,12 @@
             if (!isLikelyMobile()) return;
             if (getApiBaseUrl()) return;
 
-            const initial = 'https://miso-chat.jory.dev';
-            const entered = window.prompt('Enter your Miso server URL (e.g. https://miso-chat.jory.dev)', initial);
+            const entered = window.prompt(`Enter your Miso server URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`, SANITIZED_SERVER_EXAMPLE_URL);
             if (entered === null) return;
 
             const normalized = setApiBaseUrl(entered);
             if (!normalized) {
-                window.alert('That URL does not look valid. Open the app again and enter a full URL like https://miso-chat.jory.dev');
+                window.alert(`That URL does not look valid. Open the app again and enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
             }
         }
 
@@ -2108,15 +2264,20 @@
 
                     historyMessageKeys.add(key);
 
-                    const sender = msg.role === 'user' ? 'user' : 'miso';
+                    const role = String(msg.role || 'assistant').toLowerCase();
+                    const sender = role === 'user' ? 'user' : (role === 'system' ? 'system' : 'miso');
                     if (sender === 'user') return;
 
-                    if (consumeLocalAssistantEcho(msg.content)) return;
+                    if (sender === 'miso' && consumeLocalAssistantEcho(msg.content)) return;
 
-                    // Include content snippet to ensure unique reaction keys even with duplicate timestamps
+                    // Prefer stable gateway ids when available; fallback to timestamp/content signature.
                     const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
+                    const reactionKeyHint = msg.messageId
+                        ? `gateway:${msg.messageId}`
+                        : `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`;
                     addMessage(sender, msg.content, {
-                        reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
+                        reactionKeyHint,
+                        messageId: msg.messageId,
                         toolCalls: msg.toolCalls,
                         timestamp: msg.timestamp,
                     });
@@ -2149,6 +2310,13 @@
             const toolCalls = options.toolCalls || (typeof content === 'object' && content !== null ? content.toolCalls : null) || [];
             const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
             const hasText = String(text || '').trim().length > 0;
+
+            if (sender === 'system' && hasText) {
+                const reactionEvent = parseGatewayReactionEvent(text);
+                if (reactionEvent && applyGatewayReactionEvent(reactionEvent)) {
+                    return;
+                }
+            }
 
             if (hasText || (sender === 'miso' && hasToolCalls)) {
                 const bubble = document.createElement('div');
@@ -2228,35 +2396,17 @@
                         }
 
                         saveReactions(messageReactions);
-
-                        // Update all buttons in this row
-                        row.querySelectorAll('.reaction-btn').forEach((node) => {
-                            const nodeEmoji = node.querySelector('span:first-child').textContent;
-                            const nodeCount = messageReactions[key]?.[nodeEmoji] || 0;
-                            const nodeHasReaction = nodeCount > 0;
-
-                            node.classList.toggle('active', nodeHasReaction);
-                            node.setAttribute('aria-pressed', nodeHasReaction ? 'true' : 'false');
-
-                            // Update or add/remove count span
-                            let countSpan = node.querySelector('.reaction-count');
-                            if (nodeCount > 0) {
-                                if (!countSpan) {
-                                    countSpan = document.createElement('span');
-                                    countSpan.className = 'reaction-count';
-                                    node.appendChild(countSpan);
-                                }
-                                countSpan.textContent = nodeCount;
-                            } else if (countSpan) {
-                                countSpan.remove();
-                            }
-                        });
+                        syncReactionRows(key);
                     });
 
                     row.appendChild(btn);
                 });
 
                 contentWrap.appendChild(row);
+
+                // Register this row for live updates when gateway reaction events arrive
+                if (!reactionRowsByKey.has(key)) reactionRowsByKey.set(key, new Set());
+                reactionRowsByKey.get(key).add(row);
             }
 
             // Add timestamp if provided
@@ -2286,12 +2436,19 @@
                 return;
             }
 
+            reactionRowsByKey.clear();
             messages.forEach((msg, index) => {
                 historyMessageKeys.add(historyMessageKey(msg, index));
+                const role = String(msg.role || 'assistant').toLowerCase();
+                const sender = role === 'user' ? 'user' : (role === 'system' ? 'system' : 'miso');
                 // Include content snippet to ensure unique reaction keys even with duplicate timestamps
                 const contentSnippet = String(msg.content || '').slice(0, 40).replace(/\s+/g, '');
-                addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
-                    reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`,
+                const reactionKeyHint = msg.messageId
+                    ? `gateway:${msg.messageId}`
+                    : `history:${msg.timestamp || index}:${msg.role || 'assistant'}:${contentSnippet}`;
+                addMessage(sender, msg.content, {
+                    reactionKeyHint,
+                    messageId: msg.messageId,
                     suppressNotify: true,
                     toolCalls: msg.toolCalls,
                     timestamp: msg.timestamp,
@@ -2666,23 +2823,23 @@
         async function logout() {
             // Stop all polling first
             stopHistoryPolling();
-            
+
             // Clear all localStorage to prevent any session restoration
             try {
                 localStorage.clear();
             } catch (e) {
                 console.warn('localStorage clear failed:', e);
             }
-            
+
             // Destroy session on server
             try {
-                await apiFetch('/logout', { method: 'POST', credentials: 'include' });
+                await fetch(apiUrl('/logout'), { method: 'POST', credentials: 'include' });
             } catch (e) {
                 console.warn('Logout fetch failed:', e);
             }
-            
-            // Force hard redirect to clear all state
-            window.location.replace('/login');
+
+            // Force hard redirect to auth page tied to selected backend
+            window.location.replace(loginUrl());
         }
 
         function resizeMessageInput() {
