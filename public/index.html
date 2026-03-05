@@ -990,7 +990,8 @@
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
         const HISTORY_POLL_INTERVAL_MS = 8000;
-        const QUEUE_RETRY_DELAY_MS = 5000;
+        const QUEUE_RETRY_BASE_DELAY_MS = 5000;
+        const QUEUE_RETRY_MAX_DELAY_MS = 60000;
         const THEME_STORAGE_KEY = 'miso.theme.v1';
         const EMOJI_SHORTCODES = Object.freeze({
             smile: '😀',
@@ -1054,6 +1055,9 @@
         let historyPollTimer = null;
         let historyPollInFlight = false;
         let queueRetryTimer = null;
+        let queueRetryAttempt = 0;
+        let queueRetryNextAt = 0;
+        let queueLastKnownOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
         let sseConnected = false;
         let sseTypingActive = false;
         let historyMessageKeys = new Set();
@@ -2329,19 +2333,60 @@
             return queued > 0 ? `Online · queue ${queued}` : 'Online';
         }
 
-        function clearQueueRetryTimer() {
+        function nextQueueRetryDelayMs() {
+            const backoffMultiplier = Math.max(queueRetryAttempt, 0);
+            const delay = QUEUE_RETRY_BASE_DELAY_MS * (2 ** backoffMultiplier);
+            return Math.min(delay, QUEUE_RETRY_MAX_DELAY_MS);
+        }
+
+        function resetQueueRetryBackoff() {
+            queueRetryAttempt = 0;
+            queueRetryNextAt = 0;
+        }
+
+        function clearQueueRetryTimer(resetAttempt = false) {
             if (queueRetryTimer) {
                 clearTimeout(queueRetryTimer);
                 queueRetryTimer = null;
             }
+            queueRetryNextAt = 0;
+            if (resetAttempt) {
+                queueRetryAttempt = 0;
+            }
         }
 
-        function scheduleQueueRetry(delayMs = QUEUE_RETRY_DELAY_MS) {
-            if (queueRetryTimer) return;
+        function waitingForInternetStatus(sessionKey = currentSessionKey) {
+            const queued = queueCountForSession(sessionKey);
+            return queued > 0 ? `Offline · waiting for internet (${queued} queued)` : 'Offline · waiting for internet';
+        }
+
+        function scheduleQueueRetry(delayMs = null) {
+            const queued = queueCountForSession(currentSessionKey);
+            if (queued <= 0) return;
+
+            if (queueRetryTimer) {
+                const remainingSeconds = Math.max(1, Math.ceil((queueRetryNextAt - Date.now()) / 1000));
+                setOnlineState(false, `Offline · retry in ${remainingSeconds}s (${queued} queued, attempt ${Math.max(queueRetryAttempt, 1)})`);
+                return;
+            }
+
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                setOnlineState(false, waitingForInternetStatus());
+                return;
+            }
+
+            const effectiveDelayMs = Number.isFinite(delayMs) && delayMs > 0 ? delayMs : nextQueueRetryDelayMs();
+            const nextAttempt = queueRetryAttempt + 1;
+            const seconds = Math.ceil(effectiveDelayMs / 1000);
+            setOnlineState(false, `Offline · retry in ${seconds}s (${queued} queued, attempt ${nextAttempt})`);
+
+            queueRetryNextAt = Date.now() + effectiveDelayMs;
             queueRetryTimer = setTimeout(() => {
                 queueRetryTimer = null;
+                queueRetryNextAt = 0;
                 processQueue();
-            }, delayMs);
+            }, effectiveDelayMs);
+            queueRetryAttempt = nextAttempt;
         }
 
         function updateTypingIndicator() {
@@ -2355,9 +2400,15 @@
                 if (!response.ok) return;
                 const health = await response.json();
                 if (health?.gatewayWsConnected === false) {
+                    const queued = queueCountForSession(currentSessionKey);
+                    if (queued > 0 && typeof navigator !== 'undefined' && navigator.onLine === false) {
+                        setOnlineState(false, waitingForInternetStatus());
+                        return;
+                    }
+
                     const reconnecting = Number(health?.gatewayWsReconnectAttempts || 0) > 0;
                     setOnlineState(false, reconnecting ? 'Reconnecting to gateway…' : 'Gateway handshake failed (backend disconnected)');
-                    if (queueCountForSession(currentSessionKey) > 0) {
+                    if (queued > 0) {
                         scheduleQueueRetry();
                     }
                     return;
@@ -2365,7 +2416,13 @@
 
                 if (currentSessionKey) {
                     setOnlineState(true, queueStatusText(currentSessionKey));
-                    if (!sending && queueCountForSession(currentSessionKey) > 0) {
+                    const queued = queueCountForSession(currentSessionKey);
+                    if (!sending && queued > 0) {
+                        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                            setOnlineState(false, waitingForInternetStatus(currentSessionKey));
+                            return;
+                        }
+
                         clearQueueRetryTimer();
                         processQueue();
                     }
@@ -2373,6 +2430,33 @@
             } catch {
                 // keep current state
             }
+        }
+
+        function handleBrowserConnectivityChange() {
+            const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+            if (isOnline === queueLastKnownOnline) return;
+
+            queueLastKnownOnline = isOnline;
+
+            if (!isOnline) {
+                if (queueCountForSession(currentSessionKey) > 0) {
+                    clearQueueRetryTimer();
+                    setOnlineState(false, waitingForInternetStatus());
+                }
+                addMessage('system', '📴 You are offline. Queued messages will send when your connection is back.');
+                return;
+            }
+
+            const queued = queueCountForSession(currentSessionKey);
+            if (queued > 0) {
+                addMessage('system', `📶 Connection restored. Replaying ${queued} queued message${queued === 1 ? '' : 's'}.`);
+                clearQueueRetryTimer();
+                processQueue();
+                return;
+            }
+
+            setOnlineState(true, queueStatusText(currentSessionKey));
+            refreshBackendHealth();
         }
 
         function rememberLocalAssistantEcho(content) {
@@ -2823,6 +2907,7 @@
             const sessionAssistant = selectedMeta?.agentName || selectedMeta?.displayName || configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
+            clearQueueRetryTimer(true);
             setOnlineState(true, 'Loading history...');
             updateTypingIndicator();
 
@@ -2852,6 +2937,11 @@
             const activeSessionKey = currentSessionKey;
             const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === activeSessionKey);
             if (nextIndex < 0) return;
+
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                scheduleQueueRetry(QUEUE_RETRY_BASE_DELAY_MS);
+                return;
+            }
 
             clearQueueRetryTimer();
             sending = true;
@@ -2902,13 +2992,16 @@
                 updateTypingIndicator();
 
                 if (sendFailed) {
-                    const retryText = remaining > 0 ? `Offline · retrying (${remaining} queued)` : 'Offline';
-                    setOnlineState(false, retryText);
-                    scheduleQueueRetry();
+                    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                        setOnlineState(false, waitingForInternetStatus(activeSessionKey));
+                    } else {
+                        scheduleQueueRetry();
+                    }
                     refreshBackendHealth();
                     return;
                 }
 
+                resetQueueRetryBackoff();
                 setOnlineState(true, queueStatusText(activeSessionKey));
                 if (remaining > 0) processQueue();
             }
@@ -3201,6 +3294,8 @@
             if (!document.hidden) clearUnreadNotifications();
         });
         window.addEventListener('focus', clearUnreadNotifications);
+        window.addEventListener('online', handleBrowserConnectivityChange);
+        window.addEventListener('offline', handleBrowserConnectivityChange);
 
         (async () => {
             initTheme();
