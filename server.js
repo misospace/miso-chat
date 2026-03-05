@@ -235,7 +235,7 @@ if (oidcEnabled) {
   ));
 }
 
-const allowedReturnToSchemes = new Set(['http:', 'https:', 'capacitor:', 'ionic:']);
+const allowedReturnToSchemes = new Set(['http:', 'https:', 'capacitor:', 'ionic:', 'misochat:']);
 
 function getReturnTo(req, fallback = '/') {
   const raw = typeof req.body?.return_to === 'string' && req.body.return_to.trim()
