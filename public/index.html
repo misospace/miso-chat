@@ -3453,7 +3453,11 @@
                     appPlugin.addListener('appUrlOpen', async (data) => {
                         try {
                             const url = new URL(data.url);
-                            if (!(url.pathname === '/auth/callback' || url.pathname.endsWith('/auth/callback'))) return;
+                            const isExpectedCallback =
+                                (url.host === 'auth' && url.pathname === '/callback')
+                                || url.pathname === '/auth/callback'
+                                || url.pathname.endsWith('/auth/callback');
+                            if (!isExpectedCallback) return;
 
                             const backend = url.searchParams.get('backend');
                             if (backend) setApiBaseUrl(backend);
