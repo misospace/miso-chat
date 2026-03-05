@@ -48,12 +48,16 @@ docker run -d --name miso-chat \
 | `SESSION_SECRET` | Yes | - | Secret for sessions |
 | `SESSION_COOKIE_SAMESITE` | No | `strict` (or `lax` when OIDC enabled) | Session cookie SameSite policy (`strict|lax|none`) |
 | `SESSION_COOKIE_SECURE` | No | `true` in production | Override session cookie `Secure` flag |
+| `CSRF_TRUSTED_ORIGINS` | No | - | Comma-separated extra origins allowed for state-changing requests |
 | `OIDC_ENABLED` | No | `false` | Enable OIDC auth |
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
 | `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
 | `CAPACITOR_COOKIES_ENABLED` | No | `true` | Enable Capacitor cookie bridge for native app builds |
 
 ## Security
+
+- Adds baseline HTTP hardening headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`).
+- Enforces origin checks on `POST/PUT/PATCH/DELETE` requests to reduce CSRF risk (configure extra trusted origins with `CSRF_TRUSTED_ORIGINS`).
 
 ```yaml
 securityContext:
