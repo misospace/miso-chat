@@ -1967,8 +1967,20 @@
             return target.toString();
         }
 
-        function handleAuthRequired() {
-            window.location.assign(loginUrl());
+        async function startAuthFlow() {
+            const url = loginUrl();
+            if (isNativeCapacitor()) {
+                const browser = window.Capacitor?.Plugins?.Browser;
+                if (browser && typeof browser.open === 'function') {
+                    await browser.open({ url });
+                    return;
+                }
+            }
+            window.location.assign(url);
+        }
+
+        async function handleAuthRequired() {
+            await startAuthFlow();
             throw new Error('Authentication required');
         }
 
@@ -1979,7 +1991,7 @@
             });
 
             if (response.status === 401) {
-                handleAuthRequired();
+                await handleAuthRequired();
             }
 
             return response;
@@ -3451,6 +3463,12 @@
                         }
 
                         await consumeMobileAuthToken(token);
+
+                        const browser = window.Capacitor?.Plugins?.Browser;
+                        if (browser && typeof browser.close === 'function') {
+                            try { await browser.close(); } catch {}
+                        }
+
                         window.location.reload();
                     } catch (error) {
                         console.error('[DeepLink] callback handling failed', error);
