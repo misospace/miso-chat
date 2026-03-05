@@ -1967,8 +1967,15 @@
             return target.toString();
         }
 
+        function oidcUrl() {
+            const target = new URL(apiUrl('/auth/oidc'), window.location.href);
+            target.searchParams.set('return_to', loginReturnToUrl());
+            target.searchParams.set('mobile', '1');
+            return target.toString();
+        }
+
         async function startAuthFlow() {
-            const url = loginUrl();
+            const url = isNativeCapacitor() ? oidcUrl() : loginUrl();
             if (isNativeCapacitor()) {
                 const browser = window.Capacitor?.Plugins?.Browser;
                 if (browser && typeof browser.open === 'function') {
