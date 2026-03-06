@@ -38,6 +38,22 @@ const MAX_CHAT_MESSAGE_LENGTH = (() => {
   const parsed = Number(process.env.MAX_CHAT_MESSAGE_LENGTH || 4000);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 4000;
 })();
+const APP_VERSION = (() => {
+  if (typeof process.env.APP_VERSION === 'string' && process.env.APP_VERSION.trim()) {
+    return process.env.APP_VERSION.trim();
+  }
+
+  try {
+    const pkg = require('./package.json');
+    if (typeof pkg?.version === 'string' && pkg.version.trim()) {
+      return pkg.version.trim();
+    }
+  } catch (error) {
+    console.warn('Unable to resolve app version from package.json:', error.message);
+  }
+
+  return 'unknown';
+})();
 
 // SSE clients for real-time gateway event forwarding
 const sseClients = new Set();
@@ -549,6 +565,7 @@ let gatewayWsLastClose = null;
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
+    version: APP_VERSION,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     gatewayWsConnected: gatewayWsManager?.isConnected?.() || false,

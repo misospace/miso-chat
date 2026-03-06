@@ -34,6 +34,10 @@ git push && git push --tags
 1. Create release from tag on GitHub
 2. Add release notes
 3. Image automatically tagged with version
+4. `release.yaml` runs automated readiness checks:
+   - semantic release tag validation
+   - GHCR image existence for the release tag
+   - optional deploy smoke check via `RELEASE_SMOKE_HEALTH_URL` secret
 
 ## Image Tags
 | Event | Tag |

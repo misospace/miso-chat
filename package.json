@@ -8,6 +8,7 @@
     "lint": "node --check server.js",
     "test": "node --check server.js && node --test tests/security.test.js",
     "test:ci": "npm run test && echo '{}' > test-results.json",
+    "release:readiness": "./scripts/release-readiness-check.sh",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
     "android:sync": "npx cap sync android",
     "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug",
