@@ -56,6 +56,18 @@ function loadAllowedOrigins() {
 
 const allowedOrigins = loadAllowedOrigins();
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self' ws: wss:",
+  "form-action 'self'",
+].join('; ');
+
 function getRequestOrigin(req) {
   const origin = normalizeOrigin(req.get('origin'));
   if (origin) return origin;
@@ -84,6 +96,7 @@ function securityHeaders(req, res, next) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 }
 
