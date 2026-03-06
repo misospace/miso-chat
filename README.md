@@ -92,6 +92,23 @@ For native APK builds, session persistence depends on cookie handling between th
 
 ## Testing
 
+### Post-Deploy Smoke Check
+
+Verify deploy health, login flow, and send-message API path:
+
+```bash
+SMOKE_BASE_URL="https://miso-chat.example.com" \
+SMOKE_USERNAME="admin" \
+SMOKE_PASSWORD="your-password" \
+npm run smoke:deploy
+```
+
+Optional overrides:
+- `SMOKE_SESSION_KEY` (default: `default`)
+- `SMOKE_MESSAGE` (default: timestamped smoke ping)
+- `SMOKE_HEALTH_URL` (if health endpoint is not `/api/health`)
+- `SMOKE_TIMEOUT_SECONDS` (default: `20`)
+
 ### WebSocket Reconnection
 
 The `GatewayWsManager` includes automatic reconnection with exponential backoff:

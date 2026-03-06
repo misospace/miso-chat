@@ -39,6 +39,23 @@ git push && git push --tags
    - GHCR image existence for the release tag
    - optional deploy smoke check via `RELEASE_SMOKE_HEALTH_URL` secret
 
+## Post-Deploy Smoke Check
+
+Run this after each deploy to verify login + message path + API health:
+
+```bash
+SMOKE_BASE_URL="https://miso-chat.example.com" \
+SMOKE_USERNAME="admin" \
+SMOKE_PASSWORD="your-password" \
+npm run smoke:deploy
+```
+
+Optional overrides:
+- `SMOKE_SESSION_KEY` (default: `default`)
+- `SMOKE_MESSAGE` (default: timestamped smoke ping)
+- `SMOKE_HEALTH_URL` (if health endpoint is not `/api/health`)
+- `SMOKE_TIMEOUT_SECONDS` (default: `20`)
+
 ## Image Tags
 | Event | Tag |
 |-------|-----|
