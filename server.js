@@ -17,6 +17,7 @@ require('dotenv').config();
 const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
+const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 
 const app = express();
 const server = http.createServer(app);
@@ -1451,6 +1452,8 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
         const hasToolCalls = toolCalls.length > 0;
         if (!hasContent && !hasToolCalls) return null;
 
+        const reactionEvent = role === 'system' ? parseGatewayReactionEvent(text) : null;
+
         // Get reaction counts for this message (match by timestamp prefix or gateway message id)
         const timestamp = m.timestamp;
         const messageReactions = [];
@@ -1472,6 +1475,7 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           content: hasContent ? text : (hasToolCalls ? ' ' : ''),
           timestamp: m.timestamp,
           ...(messageId ? { messageId: String(messageId) } : {}),
+          ...(reactionEvent ? { reactionEvent } : {}),
           ...(hasToolCalls ? { toolCalls } : {}),
           ...(messageReactions.length > 0 ? { reactions: messageReactions } : {}),
         };
