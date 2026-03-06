@@ -1,0 +1,52 @@
+name: No duplicate issue PRs
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  duplicate-issue-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure no other open PR references the same issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const text = `${pr.title}\n${pr.body || ''}`;
+            const issueRefs = Array.from(new Set([...text.matchAll(/#(\d+)/g)].map(m => Number(m[1]))));
+
+            if (issueRefs.length === 0) {
+              core.info('No issue refs found in title/body; skipping duplicate issue check.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const openPRs = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const duplicates = [];
+            for (const other of openPRs) {
+              if (other.number === pr.number) continue;
+              const otherText = `${other.title}\n${other.body || ''}`;
+              for (const issue of issueRefs) {
+                if (new RegExp(`#${issue}(?!\d)`).test(otherText)) {
+                  duplicates.push({ issue, pr: other.number, url: other.html_url });
+                }
+              }
+            }
+
+            if (duplicates.length > 0) {
+              const msg = duplicates.map(d => `Issue #${d.issue} already referenced by open PR #${d.pr} (${d.url})`).join('\n');
+              core.setFailed(`Duplicate issue PR detected:\n${msg}`);
+            } else {
+              core.info('No duplicate issue refs found among open PRs.');
+            }
