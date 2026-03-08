@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
   pull-requests: read
 
 jobs:
@@ -16,22 +17,49 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            // Issues to ignore in duplicate check (e.g., tracking/dashboard issues that should stay open)
-            const IGNORE_ISSUES = [29]; // renovate dashboard
+            // Ignore tracking/dashboard issues (e.g. Renovate dashboard) so dependency PRs can safely share them.
+            // Keep #29 for backward compatibility while also detecting future Renovate dashboard issue numbers.
+            const STATIC_IGNORE_ISSUES = [29];
 
+            const { owner, repo } = context.repo;
             const pr = context.payload.pull_request;
             const text = `${pr.title}\n${pr.body || ''}`;
             const issueRefs = Array.from(new Set([...text.matchAll(/#(\d+)/g)].map(m => Number(m[1]))));
 
-            // Filter out ignored issues
-            const filteredRefs = issueRefs.filter(i => !IGNORE_ISSUES.includes(i));
+            const dynamicIgnoreIssues = [];
+            for (const issueNumber of issueRefs) {
+              if (STATIC_IGNORE_ISSUES.includes(issueNumber)) {
+                dynamicIgnoreIssues.push(issueNumber);
+                continue;
+              }
+
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                });
+
+                if (!issue.pull_request && /^renovate dashboard\b/i.test(issue.title || '')) {
+                  dynamicIgnoreIssues.push(issueNumber);
+                }
+              } catch (error) {
+                core.warning(`Unable to inspect issue #${issueNumber}: ${error.message}`);
+              }
+            }
+
+            const ignoredSet = new Set([...STATIC_IGNORE_ISSUES, ...dynamicIgnoreIssues]);
+            if (dynamicIgnoreIssues.length > 0) {
+              core.info(`Ignoring dashboard issue refs: ${[...new Set(dynamicIgnoreIssues)].join(', ')}`);
+            }
+
+            const filteredRefs = issueRefs.filter(i => !ignoredSet.has(i));
 
             if (filteredRefs.length === 0) {
-              core.info('All issue refs are in ignore list; skipping duplicate issue check.');
+              core.info('All issue refs are dashboard/tracking issues; skipping duplicate issue check.');
               return;
             }
 
-            const { owner, repo } = context.repo;
             const openPRs = await github.paginate(github.rest.pulls.list, {
               owner,
               repo,
