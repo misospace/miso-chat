@@ -16,12 +16,18 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
+            // Issues to ignore in duplicate check (e.g., tracking/dashboard issues that should stay open)
+            const IGNORE_ISSUES = [29]; // renovate dashboard
+
             const pr = context.payload.pull_request;
             const text = `${pr.title}\n${pr.body || ''}`;
             const issueRefs = Array.from(new Set([...text.matchAll(/#(\d+)/g)].map(m => Number(m[1]))));
 
-            if (issueRefs.length === 0) {
-              core.info('No issue refs found in title/body; skipping duplicate issue check.');
+            // Filter out ignored issues
+            const filteredRefs = issueRefs.filter(i => !IGNORE_ISSUES.includes(i));
+
+            if (filteredRefs.length === 0) {
+              core.info('All issue refs are in ignore list; skipping duplicate issue check.');
               return;
             }
 
@@ -37,7 +43,7 @@ jobs:
             for (const other of openPRs) {
               if (other.number === pr.number) continue;
               const otherText = `${other.title}\n${other.body || ''}`;
-              for (const issue of issueRefs) {
+              for (const issue of filteredRefs) {
                 if (new RegExp(`#${issue}(?!\d)`).test(otherText)) {
                   duplicates.push({ issue, pr: other.number, url: other.html_url });
                 }
