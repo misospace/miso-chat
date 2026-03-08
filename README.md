@@ -53,6 +53,18 @@ docker run -d --name miso-chat \
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
 | `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
 | `CAPACITOR_COOKIES_ENABLED` | No | `true` | Enable Capacitor cookie bridge for native app builds |
+| `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Enable browser push notification configuration |
+| `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key exposed to clients |
+| `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | Private VAPID key used server-side |
+| `PUSH_VAPID_SUBJECT` | If push enabled | - | Contact URI for VAPID claims (for example `mailto:admin@example.com`) |
+
+Generate VAPID keys with:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+When `PUSH_NOTIFICATIONS_ENABLED=true`, startup now fails fast if any required `PUSH_VAPID_*` variable is missing.
 
 ## Security
 

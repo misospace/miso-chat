@@ -1646,6 +1646,8 @@
         const ASSISTANT_NAME_STORAGE_KEY = 'openclaw.assistantName';
         const API_BASE_STORAGE_KEY = 'openclaw.apiBaseUrl';
         let configuredAssistantName = localStorage.getItem(ASSISTANT_NAME_STORAGE_KEY) || 'Assistant';
+        let serviceWorkerRegistration = null;
+        let notificationPermissionPrompted = false;
 
         function resolveShortcodeEmoji(shortcode) {
             const normalized = normalizeShortcode(shortcode).replace(/-/g, '_');
@@ -2375,6 +2377,66 @@
             updateDocumentTitle();
         }
 
+        async function registerNotificationServiceWorker() {
+            if (!('serviceWorker' in navigator)) return;
+            try {
+                serviceWorkerRegistration = await navigator.serviceWorker.register('/mobile/sw.js');
+            } catch (error) {
+                console.warn('Service worker registration failed:', error);
+            }
+        }
+
+        function maybePromptForNotificationPermission() {
+            if (notificationPermissionPrompted) return;
+            if (!('Notification' in window)) return;
+
+            if (Notification.permission !== 'default') {
+                notificationPermissionPrompted = true;
+                return;
+            }
+
+            notificationPermissionPrompted = true;
+            Notification.requestPermission().catch((error) => {
+                console.warn('Notification permission request failed:', error);
+            });
+        }
+
+        function notificationPreviewFromContent(content) {
+            const text = String(content || '').replace(/\s+/g, ' ').trim();
+            if (!text) return 'New message';
+            return text.length > 140 ? `${text.slice(0, 137)}...` : text;
+        }
+
+        async function showBackgroundNotification(messageText) {
+            if (!document.hidden) return;
+            if (!('Notification' in window)) return;
+            if (Notification.permission !== 'granted') return;
+
+            const body = notificationPreviewFromContent(messageText);
+            const title = configuredAssistantName || 'Assistant';
+            const options = {
+                body,
+                tag: 'openclaw-chat-new-message',
+                renotify: true,
+            };
+
+            try {
+                const registration = serviceWorkerRegistration || await navigator.serviceWorker?.getRegistration();
+                if (registration && typeof registration.showNotification === 'function') {
+                    await registration.showNotification(title, options);
+                    return;
+                }
+            } catch (error) {
+                console.warn('Service worker notification failed:', error);
+            }
+
+            try {
+                new Notification(title, options);
+            } catch (error) {
+                console.warn('Notification dispatch failed:', error);
+            }
+        }
+
         function playNotificationTone() {
             if (!soundEnabled) return;
             try {
@@ -2404,11 +2466,12 @@
             }
         }
 
-        function notifyAssistantReply() {
+        function notifyAssistantReply(messageText = '') {
             if (!document.hidden) return;
             unreadNotifications += 1;
             updateDocumentTitle();
             playNotificationTone();
+            showBackgroundNotification(messageText);
         }
 
         function setOnlineState(online, text = null) {
@@ -2906,7 +2969,7 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
             if (sender === 'miso' && !options.suppressNotify) {
-                notifyAssistantReply();
+                notifyAssistantReply(content);
             }
         }
 
@@ -3457,6 +3520,7 @@
             // Desktop: Enter sends, Shift+Enter inserts newline
             if (!e.shiftKey) {
                 e.preventDefault();
+                maybePromptForNotificationPermission();
                 sendMessage();
             }
         });
@@ -3468,7 +3532,10 @@
         });
 
         refreshBtn?.addEventListener('click', refreshCurrentSession);
-        sendBtn.addEventListener('click', () => sendMessage());
+        sendBtn.addEventListener('click', () => {
+            maybePromptForNotificationPermission();
+            sendMessage();
+        });
 
         menuBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3480,6 +3547,7 @@
             closeActionMenu();
             soundEnabled = !soundEnabled;
             localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
+            if (soundEnabled) maybePromptForNotificationPermission();
             updateSoundToggle();
         });
         menuThemeBtn?.addEventListener('click', () => {
@@ -3504,6 +3572,7 @@
 
         (async () => {
             initTheme();
+            await registerNotificationServiceWorker();
             updateSoundToggle();
             assistantNameEl.textContent = configuredAssistantName;
             messageInput.placeholder = `Message ${configuredAssistantName}...`; 
