@@ -660,19 +660,14 @@ function inferAgentNameFromKey(sessionKey) {
 const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
 const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
 const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
-
 const PUSH_NOTIFICATIONS_ENABLED = parseBooleanEnv(process.env.PUSH_NOTIFICATIONS_ENABLED, false);
-const PUSH_VAPID_PUBLIC_KEY = (process.env.PUSH_VAPID_PUBLIC_KEY || '').trim();
-const PUSH_VAPID_PRIVATE_KEY = (process.env.PUSH_VAPID_PRIVATE_KEY || '').trim();
-const PUSH_VAPID_SUBJECT = (process.env.PUSH_VAPID_SUBJECT || 'mailto:admin@example.com').trim();
+const PUSH_VAPID_PUBLIC_KEY = String(process.env.PUSH_VAPID_PUBLIC_KEY || '').trim();
+const PUSH_VAPID_PRIVATE_KEY = String(process.env.PUSH_VAPID_PRIVATE_KEY || '').trim();
+const PUSH_VAPID_SUBJECT = String(process.env.PUSH_VAPID_SUBJECT || '').trim();
+const PUSH_CONFIG_READY = Boolean(PUSH_VAPID_PUBLIC_KEY && PUSH_VAPID_PRIVATE_KEY && PUSH_VAPID_SUBJECT);
 
-const pushMissingConfig = [];
-if (!PUSH_VAPID_PUBLIC_KEY) pushMissingConfig.push('PUSH_VAPID_PUBLIC_KEY');
-if (!PUSH_VAPID_PRIVATE_KEY) pushMissingConfig.push('PUSH_VAPID_PRIVATE_KEY');
-const pushNotificationsReady = !PUSH_NOTIFICATIONS_ENABLED || pushMissingConfig.length === 0;
-
-if (PUSH_NOTIFICATIONS_ENABLED && pushMissingConfig.length > 0) {
-  console.warn(`⚠️ Push notifications enabled but missing config: ${pushMissingConfig.join(', ')}`);
+if (PUSH_NOTIFICATIONS_ENABLED && !PUSH_CONFIG_READY) {
+  throw new Error('PUSH_NOTIFICATIONS_ENABLED=true requires PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY, and PUSH_VAPID_SUBJECT');
 }
 
 app.get('/api/config', (req, res) => {
@@ -687,10 +682,7 @@ app.get('/api/config', (req, res) => {
     oidcLabel: getOidcLabel(),
     pushNotifications: {
       enabled: PUSH_NOTIFICATIONS_ENABLED,
-      ready: pushNotificationsReady,
-      vapidPublicKeyConfigured: Boolean(PUSH_VAPID_PUBLIC_KEY),
-      vapidSubject: PUSH_VAPID_SUBJECT,
-      missingConfig: PUSH_NOTIFICATIONS_ENABLED ? pushMissingConfig : [],
+      vapidPublicKey: PUSH_NOTIFICATIONS_ENABLED ? PUSH_VAPID_PUBLIC_KEY : '',
     },
   });
 });
@@ -1675,6 +1667,7 @@ server.listen(PORT, async () => {
    Gateway WS Client: ${GATEWAY_WS_CLIENT_ID} (${GATEWAY_WS_CLIENT_MODE})
    Gateway Device Identity: ${fs.existsSync(GATEWAY_DEVICE_IDENTITY_PATH) ? GATEWAY_DEVICE_IDENTITY_PATH : 'missing'}
    Default Session: ${DEFAULT_SESSION_KEY}
+   Push Notifications: ${PUSH_NOTIFICATIONS_ENABLED ? `enabled (${PUSH_CONFIG_READY ? 'configured' : 'misconfigured'})` : 'disabled'}
    Auth: ${process.env.OIDC_ENABLED === 'true' ? 'OIDC' : 'Local'}
    Node Env: ${process.env.NODE_ENV || 'development'}
    

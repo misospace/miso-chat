@@ -14,6 +14,7 @@
 - 🔐 **Authentication**: OIDC (Authentik, Okta, Google) + local username/password fallback
 - 💬 **Real-time chat**: WebSocket connection to OpenClaw gateway
 - 📱 **Mobile-friendly**: PWA-style responsive UI with native app feel
+- 🔔 **Background alerts**: Optional browser notifications + sounds for assistant replies when tab is hidden
 - 🐳 **Containerized**: Docker + Kubernetes deployment ready
 - 🔒 **Security hardened**: Non-root user, rate limiting, XSS protection
 - 🤖 **Automated**: CI/CD with linting, testing, and multi-platform builds
@@ -53,22 +54,18 @@ docker run -d --name miso-chat \
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
 | `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
 | `CAPACITOR_COOKIES_ENABLED` | No | `true` | Enable Capacitor cookie bridge for native app builds |
-| `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Enable web push prerequisites checks/config exposure |
-| `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | VAPID public key used by clients for subscription |
-| `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | VAPID private key used by server-side delivery |
-| `PUSH_VAPID_SUBJECT` | No | `mailto:admin@example.com` | VAPID subject claim (`mailto:` URL recommended) |
+| `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Enable browser push notification configuration |
+| `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key exposed to clients |
+| `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | Private VAPID key used server-side |
+| `PUSH_VAPID_SUBJECT` | If push enabled | - | Contact URI for VAPID claims (for example `mailto:admin@example.com`) |
 
-## Push Notifications (Prerequisites)
+Generate VAPID keys with:
 
-Issue #255 is tracking push notifications end-to-end. This release adds explicit configuration prerequisites so deployments can be validated before delivery wiring is enabled.
+```bash
+npx web-push generate-vapid-keys
+```
 
-Minimum requirements when enabling push:
-- `PUSH_NOTIFICATIONS_ENABLED=true`
-- Valid `PUSH_VAPID_PUBLIC_KEY` and `PUSH_VAPID_PRIVATE_KEY`
-- `PUSH_VAPID_SUBJECT` set to a valid contact URL (usually `mailto:...`)
-- OpenClaw gateway support for notification delivery
-
-If push is enabled without VAPID keys, the app now reports push as not ready in `/api/config` and logs a startup warning.
+When `PUSH_NOTIFICATIONS_ENABLED=true`, startup now fails fast if any required `PUSH_VAPID_*` variable is missing.
 
 ## Security
 
@@ -105,6 +102,14 @@ For native APK builds, session persistence depends on cookie handling between th
   - `SESSION_COOKIE_SAMESITE=none`
   - `SESSION_COOKIE_SECURE=true`
 - `401` responses already trigger a login redirect in the client as a fallback when a session has expired.
+
+## Background Notifications
+
+Browser notifications are available when the tab is in the background.
+
+- Open the top-right menu (`☰`) and toggle **Alerts** on.
+- The app will ask for browser notification permission once.
+- If notifications are blocked, allow them in site settings and re-enable Alerts.
 
 ## Testing
 
@@ -210,8 +215,6 @@ manager.on('reconnect-failed', (err) => {
 ### Issues & PRs
 - [Open Issues](https://github.com/joryirving/miso-chat/issues)
 - [Open PRs](https://github.com/joryirving/miso-chat/pulls)
-
-## Changelog
 
 ## Changelog
 
