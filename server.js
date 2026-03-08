@@ -56,6 +56,149 @@ const APP_VERSION = (() => {
   return 'unknown';
 })();
 
+const LINK_PREVIEW_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_TIMEOUT_MS || 5000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
+})();
+const LINK_PREVIEW_MAX_HTML_CHARS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_MAX_HTML_CHARS || 250000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 250000;
+})();
+const LINK_PREVIEW_USER_AGENT =
+  process.env.LINK_PREVIEW_USER_AGENT ||
+  `miso-chat-link-preview/${APP_VERSION} (+https://github.com/joryirving/miso-chat)`;
+
+function isPrivateIPv4(hostname) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
+  const octets = hostname.split('.').map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+
+  const [a, b] = octets;
+  return (
+    a === 10
+    || a === 127
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+  );
+}
+
+function isPrivateIPv6(hostname) {
+  const normalized = String(hostname || '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+  return (
+    normalized === '::1'
+    || normalized === '0:0:0:0:0:0:0:1'
+    || normalized.startsWith('fe80:')
+    || normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+  );
+}
+
+function isForbiddenLinkPreviewHost(hostname) {
+  const normalized = String(hostname || '').toLowerCase();
+  if (!normalized) return true;
+  if (normalized === 'localhost' || normalized.endsWith('.localhost') || normalized.endsWith('.local')) {
+    return true;
+  }
+  if (isPrivateIPv4(normalized) || isPrivateIPv6(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function normalizePreviewText(value) {
+  return decodeHtmlEntities(value).replace(/\s+/g, ' ').trim();
+}
+
+function parseTagAttributes(tag) {
+  const attributes = {};
+  const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let match;
+  while ((match = attrRegex.exec(tag)) !== null) {
+    const key = String(match[1] || '').toLowerCase();
+    const value = match[2] ?? match[3] ?? match[4] ?? '';
+    if (key && !(key in attributes)) {
+      attributes[key] = value;
+    }
+  }
+  return attributes;
+}
+
+function resolveRelativeUrl(candidate, baseUrl) {
+  if (!candidate) return '';
+  try {
+    return new URL(candidate, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
+function extractLinkPreviewData(html, pageUrl) {
+  const metaMap = new Map();
+  const metaRegex = /<meta\s+[^>]*>/gi;
+  let metaMatch;
+
+  while ((metaMatch = metaRegex.exec(html)) !== null) {
+    const attrs = parseTagAttributes(metaMatch[0]);
+    const key = String(attrs.property || attrs.name || '').toLowerCase().trim();
+    const rawContent = attrs.content;
+    if (!key || !rawContent || metaMap.has(key)) continue;
+    const normalized = normalizePreviewText(rawContent);
+    if (normalized) metaMap.set(key, normalized);
+  }
+
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const titleFromTag = titleMatch ? normalizePreviewText(titleMatch[1]) : '';
+
+  const canonicalUrl =
+    resolveRelativeUrl(metaMap.get('og:url') || '', pageUrl)
+    || pageUrl;
+
+  const imageUrl =
+    resolveRelativeUrl(metaMap.get('og:image') || '', canonicalUrl)
+    || resolveRelativeUrl(metaMap.get('twitter:image') || '', canonicalUrl)
+    || '';
+
+  const title =
+    metaMap.get('og:title')
+    || metaMap.get('twitter:title')
+    || titleFromTag;
+
+  const description =
+    metaMap.get('og:description')
+    || metaMap.get('twitter:description')
+    || metaMap.get('description')
+    || '';
+
+  let domain = '';
+  try {
+    domain = new URL(canonicalUrl).hostname;
+  } catch {
+    domain = '';
+  }
+
+  return {
+    url: canonicalUrl,
+    title,
+    description,
+    image: imageUrl,
+    domain,
+    twitterCard: metaMap.get('twitter:card') || '',
+  };
+}
+
 // SSE clients for real-time gateway event forwarding
 const sseClients = new Set();
 
@@ -603,6 +746,67 @@ app.get('/api/health', (req, res) => {
     gatewayWsLastError,
     gatewayWsLastClose,
   });
+});
+
+// GET /api/link-preview?url=https://example.com - Fetch OG metadata for inline link cards
+app.get('/api/link-preview', isAuthenticated, async (req, res) => {
+  const rawUrl = typeof req.query?.url === 'string' ? req.query.url.trim() : '';
+  if (!rawUrl) {
+    return res.status(400).json({ error: 'url query parameter is required' });
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  if (!['http:', 'https:'].includes(targetUrl.protocol)) {
+    return res.status(400).json({ error: 'Only http(s) URLs are supported' });
+  }
+
+  if (isForbiddenLinkPreviewHost(targetUrl.hostname)) {
+    return res.status(400).json({ error: 'Local/private hosts are not allowed for previews' });
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': LINK_PREVIEW_USER_AGENT,
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: `Upstream request failed (${response.status})` });
+    }
+
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
+      return res.status(422).json({ error: 'URL does not point to an HTML document' });
+    }
+
+    const html = (await response.text()).slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
+    const finalUrl = response.url || targetUrl.toString();
+    const preview = extractLinkPreviewData(html, finalUrl);
+
+    return res.json(preview);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return res.status(504).json({ error: `Preview fetch timed out after ${LINK_PREVIEW_TIMEOUT_MS}ms` });
+    }
+    console.warn('Link preview fetch failed:', error.message || error);
+    return res.status(502).json({ error: 'Unable to fetch link preview' });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 });
 
 // GET /api/openclaw-status - Return native OpenClaw session status card/details

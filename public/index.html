@@ -432,6 +432,71 @@
             color: #93c5fd;
         }
 
+        .link-previews {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .link-preview-card {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            text-decoration: none;
+            color: inherit;
+            background: rgba(255, 255, 255, 0.03);
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .link-preview-card:hover {
+            border-color: rgba(125, 211, 252, 0.6);
+            background: rgba(125, 211, 252, 0.06);
+        }
+
+        .link-preview-image {
+            width: 72px;
+            height: 72px;
+            border-radius: 8px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .link-preview-body {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .link-preview-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .link-preview-description {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+            word-break: break-word;
+        }
+
+        .link-preview-domain {
+            font-size: 11px;
+            color: #7dd3fc;
+            letter-spacing: 0.01em;
+        }
+
         .code-block {
             margin-top: 8px;
             border: 1px solid var(--border);
@@ -1144,6 +1209,9 @@
         const TABLE_REGEX = /\|[^\n]+\|\n\|[-:|\s]+\|\n((?:\|[^\n]+\|\n?)+)/g;
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
+        const MAX_LINK_PREVIEWS_PER_MESSAGE = 3;
+        const linkPreviewCache = new Map();
+        const pendingLinkPreviewRequests = new Map();
 
         function escapeHtml(value) {
             return String(value || '')
@@ -1352,6 +1420,159 @@
             
             URL_REGEX.lastIndex = 0;
             INLINE_CODE_REGEX.lastIndex = 0;
+        }
+
+        function extractUniqueUrls(source, max = MAX_LINK_PREVIEWS_PER_MESSAGE) {
+            const found = new Set();
+            const text = String(source || '');
+            for (const match of text.matchAll(URL_REGEX)) {
+                const candidate = String(match?.[1] || '').trim();
+                if (!candidate) continue;
+                try {
+                    const parsed = new URL(candidate);
+                    parsed.hash = '';
+                    found.add(parsed.toString());
+                } catch {
+                    // ignore invalid urls
+                }
+                if (found.size >= max) break;
+            }
+            URL_REGEX.lastIndex = 0;
+            return Array.from(found);
+        }
+
+        function normalizePreviewPayload(payload, fallbackUrl) {
+            const safeUrl = (() => {
+                try {
+                    return new URL(payload?.url || fallbackUrl).toString();
+                } catch {
+                    return '';
+                }
+            })();
+
+            if (!safeUrl) return null;
+
+            let domain = String(payload?.domain || '').trim();
+            if (!domain) {
+                try {
+                    domain = new URL(safeUrl).hostname;
+                } catch {
+                    domain = '';
+                }
+            }
+
+            const image = String(payload?.image || '').trim();
+            const title = String(payload?.title || '').trim();
+            const description = String(payload?.description || '').trim();
+
+            if (!title && !description && !image) {
+                return null;
+            }
+
+            return {
+                url: safeUrl,
+                title: title || domain || safeUrl,
+                description,
+                image,
+                domain,
+            };
+        }
+
+        async function fetchLinkPreview(url) {
+            if (linkPreviewCache.has(url)) {
+                return linkPreviewCache.get(url);
+            }
+
+            if (pendingLinkPreviewRequests.has(url)) {
+                return pendingLinkPreviewRequests.get(url);
+            }
+
+            const request = (async () => {
+                try {
+                    const response = await apiFetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
+                    if (!response.ok) {
+                        linkPreviewCache.set(url, null);
+                        return null;
+                    }
+                    const payload = await response.json().catch(() => null);
+                    const preview = normalizePreviewPayload(payload, url);
+                    linkPreviewCache.set(url, preview);
+                    return preview;
+                } catch (error) {
+                    console.warn('Link preview request failed:', error);
+                    linkPreviewCache.set(url, null);
+                    return null;
+                } finally {
+                    pendingLinkPreviewRequests.delete(url);
+                }
+            })();
+
+            pendingLinkPreviewRequests.set(url, request);
+            return request;
+        }
+
+        function buildLinkPreviewCard(preview) {
+            const card = document.createElement('a');
+            card.className = 'link-preview-card';
+            card.href = preview.url;
+            card.target = '_blank';
+            card.rel = 'noopener noreferrer';
+
+            if (preview.image) {
+                const image = document.createElement('img');
+                image.className = 'link-preview-image';
+                image.src = preview.image;
+                image.alt = '';
+                image.loading = 'lazy';
+                image.decoding = 'async';
+                image.referrerPolicy = 'no-referrer';
+                image.addEventListener('error', () => image.remove());
+                card.appendChild(image);
+            }
+
+            const body = document.createElement('div');
+            body.className = 'link-preview-body';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'link-preview-title';
+            titleEl.textContent = preview.title;
+            body.appendChild(titleEl);
+
+            if (preview.description) {
+                const descEl = document.createElement('div');
+                descEl.className = 'link-preview-description';
+                descEl.textContent = preview.description;
+                body.appendChild(descEl);
+            }
+
+            if (preview.domain) {
+                const domainEl = document.createElement('div');
+                domainEl.className = 'link-preview-domain';
+                domainEl.textContent = preview.domain;
+                body.appendChild(domainEl);
+            }
+
+            card.appendChild(body);
+            return card;
+        }
+
+        async function appendLinkPreviews(container, text) {
+            const urls = extractUniqueUrls(text);
+            if (!urls.length) return;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'link-previews';
+            container.appendChild(wrap);
+
+            for (const url of urls) {
+                const preview = await fetchLinkPreview(url);
+                if (!preview) continue;
+                wrap.appendChild(buildLinkPreviewCard(preview));
+            }
+
+            if (!wrap.childElementCount) {
+                wrap.remove();
+            }
         }
 
         function appendFencedCode(container, language, rawCode) {
@@ -2977,6 +3198,10 @@
                     copyCodeFromButton(btn);
                 });
                 contentWrap.appendChild(bubble);
+
+                if (hasText && sender !== 'system') {
+                    void appendLinkPreviews(contentWrap, text);
+                }
             }
 
             if (hasToolCalls) {
