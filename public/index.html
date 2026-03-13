@@ -747,6 +747,83 @@
         .input-wrapper textarea::placeholder {
             color: var(--text-secondary);
         }
+
+        .composer-attachment-preview {
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-tertiary);
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .composer-attachment-preview img {
+            width: 48px;
+            height: 48px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .composer-attachment-meta {
+            min-width: 0;
+            flex: 1;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .composer-attachment-name {
+            display: block;
+            color: var(--text-primary);
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .composer-attachment-remove {
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 8px;
+            padding: 6px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .attachment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .attachment-item {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-secondary);
+            padding: 8px;
+        }
+
+        .attachment-item img {
+            width: 100%;
+            max-width: 260px;
+            max-height: 260px;
+            object-fit: cover;
+            border-radius: 8px;
+            display: block;
+        }
+
+        .attachment-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+        }
         
         .emoji-picker {
             position: fixed;
@@ -1005,8 +1082,11 @@
     
     <div class="input-area">
         <div class="input-wrapper">
+            <div id="attachmentPreviewHost"></div>
             <textarea id="messageInput" rows="1" placeholder="Message Assistant..." autocomplete="off" autocorrect="off" autocapitalize="sentences"></textarea>
         </div>
+        <input type="file" id="attachmentInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+        <button type="button" class="emoji-btn" id="attachBtn" title="Attach image">📎</button>
         <button type="button" class="emoji-btn" id="emojiBtn" title="Add emoji">😊</button>
         <button type="button" class="send-btn" id="sendBtn" onclick="sendMessage()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1097,6 +1177,12 @@
         let historyMessageKeys = new Set();
         let localAssistantEchoes = new Map();
         let storedSessionKey = null;
+        let attachmentConfig = {
+            maxBytes: 5 * 1024 * 1024,
+            allowedTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
+            uploadPath: '/api/attachments',
+        };
+        let pendingAttachment = null;
 
         function isNativeCapacitor() {
             return typeof window.Capacitor !== 'undefined'
@@ -1210,6 +1296,7 @@
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
         const MAX_LINK_PREVIEWS_PER_MESSAGE = 3;
+        const ATTACHMENT_LINE_PREFIX = '[attachment:';
         const linkPreviewCache = new Map();
         const pendingLinkPreviewRequests = new Map();
 
@@ -2336,6 +2423,9 @@
 
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
+        const attachmentInput = document.getElementById('attachmentInput');
+        const attachBtn = document.getElementById('attachBtn');
+        const attachmentPreviewHost = document.getElementById('attachmentPreviewHost');
         const sendBtn = document.getElementById('sendBtn');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
