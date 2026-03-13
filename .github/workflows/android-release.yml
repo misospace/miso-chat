@@ -97,7 +97,7 @@ jobs:
     name: Sync with Capgo (Optional)
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'release' && secrets.CAPGO_API_KEY != ''
+    if: github.event_name == 'release'
     permissions:
       contents: read
     steps:
@@ -106,7 +106,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '24'
           
       - name: Install Capgo CLI
         run: npm install -g @capgo/cli
