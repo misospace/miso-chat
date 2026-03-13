@@ -12,6 +12,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const multer = require('multer');
 require('dotenv').config();
 
 const { GatewayWsManager } = require('./lib/gateway-ws');
@@ -67,6 +68,63 @@ const LINK_PREVIEW_MAX_HTML_CHARS = (() => {
 const LINK_PREVIEW_USER_AGENT =
   process.env.LINK_PREVIEW_USER_AGENT ||
   `miso-chat-link-preview/${APP_VERSION} (+https://github.com/joryirving/miso-chat)`;
+const MAX_ATTACHMENT_BYTES = (() => {
+  const parsed = Number(process.env.MAX_ATTACHMENT_BYTES || 5 * 1024 * 1024);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5 * 1024 * 1024;
+})();
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
+const ATTACHMENTS_DIR = path.join(__dirname, 'public', 'uploads');
+fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
+
+function sanitizeAttachmentName(name) {
+  return String(name || 'attachment')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120) || 'attachment';
+}
+
+function inferAttachmentExtension(originalName, mimeType) {
+  const ext = path.extname(String(originalName || '')).toLowerCase();
+  if (ext) return ext;
+
+  const fallbackByMime = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+  };
+  return fallbackByMime[mimeType] || '.bin';
+}
+
+const attachmentStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, ATTACHMENTS_DIR),
+  filename: (_req, file, cb) => {
+    const baseName = sanitizeAttachmentName(path.basename(file.originalname, path.extname(file.originalname)));
+    const extension = inferAttachmentExtension(file.originalname, file.mimetype);
+    const unique = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+    cb(null, `${unique}-${baseName}${extension}`);
+  },
+});
+
+const uploadAttachment = multer({
+  storage: attachmentStorage,
+  limits: {
+    fileSize: MAX_ATTACHMENT_BYTES,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_ATTACHMENT_TYPES.has(file.mimetype)) {
+      cb(new Error('Unsupported attachment type'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 function isPrivateIPv4(hostname) {
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
@@ -917,6 +975,11 @@ app.get('/api/config', (req, res) => {
       enabled: PUSH_NOTIFICATIONS_ENABLED,
       vapidPublicKey: PUSH_NOTIFICATIONS_ENABLED ? PUSH_VAPID_PUBLIC_KEY : '',
     },
+    attachments: {
+      maxBytes: MAX_ATTACHMENT_BYTES,
+      allowedTypes: Array.from(ALLOWED_ATTACHMENT_TYPES),
+      uploadPath: '/api/attachments',
+    },
   });
 });
 
@@ -1732,6 +1795,40 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
     console.error('Error getting history:', error.message);
     res.status(500).json({ error: error.message });
   }
+});
+
+// POST /api/attachments - Upload one image attachment
+app.post('/api/attachments', isAuthenticated, (req, res) => {
+  uploadAttachment.single('file')(req, res, (error) => {
+    if (error) {
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+          error: `Attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes`,
+          maxBytes: MAX_ATTACHMENT_BYTES,
+        });
+      }
+
+      return res.status(400).json({
+        error: error.message || 'Attachment upload failed',
+        allowedTypes: Array.from(ALLOWED_ATTACHMENT_TYPES),
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Attachment file is required' });
+    }
+
+    const attachmentUrl = `/uploads/${encodeURIComponent(req.file.filename)}`;
+    return res.json({
+      success: true,
+      attachment: {
+        url: attachmentUrl,
+        name: sanitizeAttachmentName(req.file.originalname),
+        type: req.file.mimetype,
+        size: req.file.size,
+      },
+    });
+  });
 });
 
 // POST /api/sessions/:sessionKey/send - Send message via gateway
