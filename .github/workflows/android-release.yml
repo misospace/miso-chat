@@ -113,6 +113,7 @@ jobs:
       
       - name: Sync with Capgo
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
           CAPGO_APP_ID: ${{ secrets.CAPGO_APP_ID || 'chat.openclaw.miso' }}
         run: |
@@ -125,5 +126,4 @@ jobs:
             --version ${{ github.event.release.tag_name }} \
             --binary-path ./release-assets/*.apk \
             --channel stable
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
