@@ -1663,22 +1663,54 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
     if (gatewayWsManager?.isConnected?.()) {
       try {
         const wsFrame = await wsSessionsList();
-        rawSessions = wsFrame?.result?.sessions || wsFrame?.sessions || [];
+        // Handle multiple possible response structures from gateway
+        if (wsFrame?.result?.sessions) {
+          rawSessions = wsFrame.result.sessions;
+        } else if (wsFrame?.sessions) {
+          rawSessions = wsFrame.sessions;
+        } else if (Array.isArray(wsFrame)) {
+          rawSessions = wsFrame;
+        } else if (wsFrame && typeof wsFrame === 'object') {
+          // Try to find sessions array in any property
+          const possibleSessionKeys = ['sessions', 'data', 'items', 'list'];
+          for (const key of possibleSessionKeys) {
+            if (Array.isArray(wsFrame[key])) {
+              rawSessions = wsFrame[key];
+              break;
+            }
+          }
+        }
+        console.log('[sessions.list] WS response structure:', JSON.stringify({
+          hasResultSessions: !!wsFrame?.result?.sessions,
+          hasSessions: !!wsFrame?.sessions,
+          isArray: Array.isArray(wsFrame),
+          keys: wsFrame ? Object.keys(wsFrame) : [],
+          rawSessionCount: rawSessions.length
+        }));
       } catch (wsErr) {
         console.warn('sessions.list via WS failed, falling back to tools invoke:', wsErr.message);
       }
     }
 
     if (!Array.isArray(rawSessions) || rawSessions.length === 0) {
+      console.log('[sessions.list] WS returned no sessions, trying tool invoke');
       const result = await toolSessionsList();
       const payload = unwrapToolResult(result);
-      rawSessions = payload?.sessions || [];
+      rawSessions = payload?.sessions || payload?.data || payload?.items || [];
+      console.log('[sessions.list] Tool response session count:', rawSessions.length);
     }
 
     const sessions = rawSessions
-      .map((s) => {
+      .map((s, idx) => {
         const sessionKey = s.key || s.sessionKey || s.sessionId;
-        if (!sessionKey || sessionKey.includes(':cron:')) return null;
+        if (!sessionKey) {
+          console.log(`[sessions.list] Session ${idx} has no sessionKey, skipping. Keys:`, Object.keys(s || {}));
+          return null;
+        }
+        if (sessionKey.includes(':cron:')) {
+          console.log(`[sessions.list] Session ${idx} is a cron session, skipping: ${sessionKey}`);
+          return null;
+        }
 
         const inferredAgentName = inferAgentNameFromKey(sessionKey);
         return {
@@ -1695,6 +1727,11 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       })
       .filter(Boolean);
 
+    console.log('[sessions.list] Final session count after filtering:', sessions.length);
+    if (sessions.length > 0) {
+      console.log('[sessions.list] Session keys:', sessions.map(s => s.sessionKey));
+    }
+
     const deduped = [];
     const seen = new Set();
     for (const s of sessions) {
@@ -1703,6 +1740,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       deduped.push(s);
     }
 
+    console.log('[sessions.list] Final deduplicated session count:', deduped.length);
     res.json({ sessions: deduped, defaultSessionKey: DEFAULT_SESSION_KEY });
   } catch (error) {
     console.error('Error listing sessions:', error.message);
