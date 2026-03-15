@@ -305,6 +305,23 @@
             text-align: right;
         }
 
+        .message-model {
+            font-size: 10px;
+            color: var(--text-secondary);
+            opacity: 0.6;
+            padding: 2px 4px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        .message.miso .message-model {
+            text-align: left;
+        }
+
+        .message.user .message-model {
+            text-align: right;
+        }
+
         .bubble {
             padding: 14px 18px;
             border-radius: 20px;
@@ -3236,6 +3253,7 @@
                         messageId: msg.messageId,
                         toolCalls: msg.toolCalls,
                         timestamp: msg.timestamp,
+                        model: msg.model,
                     });
                 });
             } catch (error) {
@@ -3379,6 +3397,16 @@
                 reactionRowsByKey.get(key).add(row);
             }
 
+            // Add model indicator for assistant messages
+            if (sender === 'miso' && options.model) {
+                const modelEl = document.createElement('div');
+                modelEl.className = 'message-model';
+                // Format: "via {model}" (e.g., "via MiniMax-M2.5", "via qwen122b")
+                const modelName = String(options.model).replace(/^model:/, '');
+                modelEl.textContent = `via ${modelName}`;
+                contentWrap.appendChild(modelEl);
+            }
+
             // Add timestamp if provided
             if (options.timestamp) {
                 const timeEl = document.createElement('div');
@@ -3422,6 +3450,7 @@
                     suppressNotify: true,
                     toolCalls: msg.toolCalls,
                     timestamp: msg.timestamp,
+                    model: msg.model,
                 });
             });
         }
@@ -3661,9 +3690,10 @@
                         ? data.responseText
                         : (data.response?.text || data.response?.message);
                     const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                    const model = data.response?.model || data.model || null;
                     if ((text && text.trim()) || toolCalls.length > 0) {
                         if (text && text.trim()) rememberLocalAssistantEcho(text);
-                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls });
+                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls, model });
                     // Handle images in response
                     if (data.images && Array.isArray(data.images)) {
                         data.images.forEach(img => addImage(img));
@@ -3725,8 +3755,9 @@
                     || (typeof data?.response?.message === 'string' && data.response.message.trim())
                     || (typeof data?.response === 'string' && data.response.trim())
                     || '';
+                const model = data.response?.model || data.model || null;
 
-                if (reply) addMessage('miso', reply);
+                if (reply) addMessage('miso', reply, { model });
                 else addMessage('system', `Command sent: ${rawSlashCommand}`);
             } catch (error) {
                 addMessage('system', `OpenClaw command failed: ${error?.message || 'network error'}`);
@@ -3762,8 +3793,9 @@
                             || (typeof data?.payload?.text === 'string' && data.payload.text.trim())
                             || (typeof data?.payload?.summary === 'string' && data.payload.summary.trim())
                             || 'OpenClaw status unavailable.';
+                        const model = data.model || data.response?.model || null;
 
-                        addMessage('miso', text);
+                        addMessage('miso', text, { model });
                     } catch (error) {
                         addMessage('system', `OpenClaw status failed: ${error?.message || 'network error'}`);
                     }
