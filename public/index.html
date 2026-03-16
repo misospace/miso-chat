@@ -656,6 +656,22 @@
             font-size: 14px;
         }
 
+        /* Loading spinner for tool calls in progress */
+        .tool-call-header .tool-call-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: toolCallSpin 0.8s linear infinite;
+            margin-right: 4px;
+        }
+
+        @keyframes toolCallSpin {
+            to { transform: rotate(360deg); }
+        }
+
         .tool-call-header .tool-call-name {
             color: var(--text-primary);
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1826,11 +1842,20 @@
             header.className = 'tool-call-header';
             header.setAttribute('role', 'button');
             header.setAttribute('aria-expanded', 'false');
-            header.innerHTML = [
+            
+            // Build header content with optional loading spinner
+            const headerParts = [
                 '<span class="tool-call-icon">🔧</span>',
                 '<span class="tool-call-name">' + escapeHtml(toolCall.name || 'tool') + '</span>',
-                '<span class="tool-call-status ' + status + '">' + escapeHtml(statusLabel) + '</span>',
-            ].join('');
+            ];
+            
+            // Add loading spinner for calling status
+            if (status === 'calling') {
+                headerParts.push('<span class="tool-call-spinner" aria-hidden="true"></span>');
+            }
+            
+            headerParts.push('<span class="tool-call-status ' + status + '">' + escapeHtml(statusLabel) + '</span>');
+            header.innerHTML = headerParts.join('');
 
             const body = document.createElement('div');
             body.className = 'tool-call-body';
