@@ -1132,6 +1132,8 @@
     <script>
         const SESSION_STORAGE_KEY = 'miso.selectedSessionKey';
         const QUEUE_STORAGE_KEY = 'miso.pendingQueue';
+        const MAX_QUEUE_SIZE = 50;
+        const QUEUE_ITEM_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
         const REACTION_STORAGE_KEY = 'miso.messageReactions.v1';
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const NOTIFY_DESKTOP_KEY = 'miso.notify.desktopEnabled.v1';
@@ -1937,14 +1939,32 @@
                 const stored = localStorage.getItem(QUEUE_STORAGE_KEY);
                 const parsed = stored ? JSON.parse(stored) : [];
                 if (!Array.isArray(parsed)) return [];
-                return parsed.map(normalizeQueueItem).filter(Boolean);
-            } catch { return []; }
+                const now = Date.now();
+                const validItems = parsed
+                    .map(normalizeQueueItem)
+                    .filter(Boolean)
+                    .filter((item) => {
+                        // Filter out items older than 24 hours
+                        const itemAge = now - (item.createdAt || 0);
+                        return itemAge < QUEUE_ITEM_MAX_AGE_MS;
+                    });
+                return validItems;
+            } catch {
+                // Handle corrupted data: clear and return empty queue
+                try { localStorage.removeItem(QUEUE_STORAGE_KEY); } catch { /* ignore */ }
+                return [];
+            }
         }
 
         function savePendingQueue(queue) {
             try {
-                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
-            } catch { /* ignore storage errors */ }
+                // Limit queue size to prevent localStorage quota issues
+                const trimmedQueue = queue.slice(0, MAX_QUEUE_SIZE);
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(trimmedQueue));
+            } catch {
+                // Handle storage errors (quota exceeded, private browsing, etc.)
+                /* ignore storage errors */
+            }
         }
 
         function queueCountForSession(sessionKey) {
