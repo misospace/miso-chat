@@ -40,9 +40,16 @@ jobs:
       - name: Get version from package.json
         id: version
         run: |
+          # Checkout the release tag to get the correct version
+          # This is needed because the workflow runs on the release event
+          # but defaults to the base branch, not the release tag
+          if [ "${{ github.event_name }}" == "release" ]; then
+            git fetch --tags
+            git checkout ${{ github.event.release.tag_name }}
+          fi
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
         
       - name: Generate Update Manifest
         if: github.event_name == 'release'
