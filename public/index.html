@@ -2893,25 +2893,43 @@
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
                 if (!AudioCtx) return;
-                const context = new AudioCtx();
+                
+                // Create or reuse AudioContext (handle suspended state)
+                let context = window.notificationAudioContext;
+                if (!context) {
+                    context = new AudioCtx();
+                    window.notificationAudioContext = context;
+                }
+                
+                // Resume context if suspended (browser autoplay policy)
+                if (context.state === 'suspended') {
+                    context.resume();
+                }
+                
                 const oscillator = context.createOscillator();
                 const gain = context.createGain();
 
                 oscillator.type = 'sine';
                 oscillator.frequency.value = 880;
-                gain.gain.value = 0.001;
+                
+                // Start with audible volume, then fade out
+                const now = context.currentTime;
+                gain.gain.setValueAtTime(0.3, now);  // Start at 30% volume
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
 
                 oscillator.connect(gain);
                 gain.connect(context.destination);
 
-                const now = context.currentTime;
-                // Louder volume: ramp to 0.5 (50% instead of 8%)
-                gain.gain.exponentialRampToValueAtTime(0.5, now + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-
                 oscillator.start(now);
-                oscillator.stop(now + 0.18);
-                oscillator.onended = () => context.close();
+                oscillator.stop(now + 0.3);
+                oscillator.onended = () => {
+                    // Clean up context after a delay if it's been idle
+                    setTimeout(() => {
+                        if (context.state === 'running' && !window.notificationAudioContext) {
+                            context.close().catch(() => {});
+                        }
+                    }, 1000);
+                };
             } catch (error) {
                 console.warn('Notification tone failed:', error);
             }
