@@ -603,7 +603,8 @@ app.get('/login', (req, res) => {
   if (authMode === 'oidc') {
     const encodedReturnTo = encodeURIComponent(returnTo);
     const mobile = req.query?.mobile === '1' ? '&mobile=1' : '';
-    return res.redirect(`/auth/oidc?return_to=${encodedReturnTo}${mobile}`);
+    const prompt = req.query?.prompt === 'login' ? '&prompt=login' : '';
+    return res.redirect(`/auth/oidc?return_to=${encodedReturnTo}${mobile}${prompt}`);
   }
 
   return res.sendFile(__dirname + '/public/login.html');
@@ -655,9 +656,17 @@ app.get('/auth/oidc', (req, res, next) => {
   if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
   const returnTo = getReturnTo(req, '/');
   const mobileRequested = req.query?.mobile === '1';
+  const prompt = req.query?.prompt === 'login' ? 'login' : undefined;
   req.session.oidcReturnTo = returnTo;
   req.session.oidcMobileFlow = mobileRequested;
-  return passport.authenticate('oidc')(req, res, next);
+  
+  // Pass prompt parameter to force re-authentication if needed
+  const authOptions = {};
+  if (prompt) {
+    authOptions.authorizationParams = { prompt };
+  }
+  
+  return passport.authenticate('oidc', authOptions)(req, res, next);
 });
 app.get('/auth/oidc/callback', (req, res, next) => {
   passport.authenticate('oidc', (err, user) => {
@@ -713,9 +722,12 @@ app.post('/logout', (req, res) => {
     req.session?.destroy(() => {
       res.clearCookie('connect.sid');
       if (process.env.OIDC_ENABLED === 'true' && process.env.OIDC_ISSUER) {
-        return res.redirect(
-          process.env.OIDC_ISSUER + '/logout/?next=' + encodeURIComponent(req.protocol + '://' + req.get('host') + '/login')
-        );
+        // Redirect to OIDC provider's logout endpoint, then to a page that forces re-auth
+        // The prompt=login parameter ensures the user must re-authenticate even if their
+        // OIDC session still exists (prevents auto-login after logout)
+        const logoutUrl = new URL(process.env.OIDC_ISSUER + '/logout/');
+        logoutUrl.searchParams.set('next', encodeURIComponent(req.protocol + '://' + req.get('host') + '/login?prompt=login'));
+        return res.redirect(logoutUrl.toString());
       }
       return res.redirect('/login');
     });
