@@ -1998,7 +1998,10 @@ const initGatewayWsManager = async () => {
     
     // Set up reconnection event handlers
     gatewayWsManager.on('reconnecting', (attempt, delay) => {
+      const pendingCount = gatewayWsManager.getPendingRequestCount();
+      const pendingForRecovery = gatewayWsManager.getPendingForRecoveryCount();
       console.log(`🔄 Gateway WS reconnecting (attempt ${attempt}) in ${delay}ms...`);
+      console.log(`   Pending requests: ${pendingCount}, Pending for recovery: ${pendingForRecovery}`);
     });
     
     gatewayWsManager.on('reconnect-failed', (err) => {
@@ -2011,7 +2014,17 @@ const initGatewayWsManager = async () => {
         reason: typeof reason === 'string' ? reason : String(reason || ''),
         at: new Date().toISOString(),
       };
-      console.log(`🔌 Gateway WS closed: ${code} ${reason}`);
+      const pendingCount = gatewayWsManager.getPendingRequestCount();
+      console.log(`🔌 Gateway WS closed: ${code} ${reason} (pending: ${pendingCount})`);
+    });
+    
+    gatewayWsManager.on('connected', () => {
+      const pendingRecovered = gatewayWsManager.getPendingForRecoveryCount();
+      if (pendingRecovered > 0) {
+        console.log(`✅ Gateway WS reconnected with ${pendingRecovered} pending requests recovered`);
+      } else {
+        console.log('✅ Gateway WS manager connected');
+      }
     });
     
     gatewayWsManager.on('error', (err) => {
