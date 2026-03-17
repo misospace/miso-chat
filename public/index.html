@@ -121,6 +121,14 @@
             gap: 6px;
         }
         
+        .version-info {
+            font-size: 10px;
+            color: var(--text-secondary);
+            opacity: 0.6;
+            margin-top: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        
         .status-dot {
             width: 8px;
             height: 8px;
@@ -1085,6 +1093,7 @@
                 <span class="status-dot" id="statusDot"></span>
                 <span id="statusText">Connecting...</span>
             </div>
+            <div class="version-info" id="versionInfo">v0.0.0</div>
         </div>
         <div class="header-controls">
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
@@ -2525,6 +2534,7 @@
                 document.documentElement.setAttribute('data-theme', 'light');
             }
             updateThemeToggle();
+            updateVersionInfo();
         }
 
         function closeActionMenu() {
@@ -2818,6 +2828,13 @@
             if (!menuThemeBtn) return;
             const theme = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
             menuThemeBtn.textContent = theme === 'light' ? '☀️ Theme: light' : '🌙 Theme: dark';
+        }
+
+        function updateVersionInfo() {
+            const versionEl = document.getElementById('versionInfo');
+            if (versionEl) {
+                versionEl.textContent = 'v0.0.0';
+            }
         }
 
         function updateDocumentTitle() {
