@@ -1659,6 +1659,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       limit: 200,
       includeLastMessage: true,
       includeDerivedTitles: true,
+      kind: "", // Empty string means all kinds (session, subagent, acp, etc.)
     };
 
     const wsSessionsList = async () => {
