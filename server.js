@@ -1948,6 +1948,78 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
   }
 });
 
+// POST /api/sessions/:sessionKey/send-stream - Stream message response via SSE
+app.post('/api/sessions/:sessionKey/send-stream', isAuthenticated, async (req, res) => {
+  const requestedSessionKey = req.params.sessionKey;
+  const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
+    ? requestedSessionKey
+    : DEFAULT_SESSION_KEY;
+  const rawMessage = req.body?.message;
+
+  if (typeof rawMessage !== 'string') {
+    return res.status(400).json({ error: 'Message must be a string' });
+  }
+
+  const message = rawMessage.trim();
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+  if (message.length > MAX_CHAT_MESSAGE_LENGTH) {
+    return res.status(413).json({
+      error: `Message exceeds ${MAX_CHAT_MESSAGE_LENGTH} characters`,
+      maxLength: MAX_CHAT_MESSAGE_LENGTH,
+    });
+  }
+
+  console.log(`Streaming to ${sessionKey}: [message hidden]`);
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  // Send initial connection event
+  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+
+  // Broadcast typing indicator start
+  broadcastToSseClients('typing.start', { sessionKey, timestamp: Date.now() });
+
+  try {
+    const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
+    const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds, origin: requestOrigin });
+    const replyPayload = payload?.reply || payload?.response || payload?.details?.reply || payload;
+    const responseText = extractReplyText(replyPayload);
+    const filteredResponseText = sanitizeAssistantText(responseText);
+    const toolCalls = extractReplyToolCalls(replyPayload);
+    const model = extractReplyModel(replyPayload);
+
+    // Send the complete response as a single "complete" event
+    // This simulates streaming by sending all tokens at once
+    // In the future, if gateway supports streaming, this can be enhanced
+    res.write(`data: ${JSON.stringify({ 
+      type: 'complete', 
+      responseText: filteredResponseText, 
+      toolCalls, 
+      model,
+      timestamp: Date.now() 
+    })}\n\n`);
+
+    // Send done event
+    res.write(`data: ${JSON.stringify({ type: 'done', timestamp: Date.now() })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Error streaming:', error.message);
+    const msg = String(error.message || 'stream failed');
+    res.write(`data: ${JSON.stringify({ type: 'error', error: msg, timestamp: Date.now() })}\n\n`);
+    res.end();
+  } finally {
+    // Broadcast typing indicator stop
+    broadcastToSseClients('typing.stop', { sessionKey, timestamp: Date.now() });
+  }
+});
+
 // ============ REACTION API ENDPOINTS ============
 
 // GET /api/reactions/:sessionKey - Get all reactions for a session (batch load)

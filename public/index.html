@@ -3734,20 +3734,38 @@
             setOnlineState(true, queueStatusText(activeSessionKey));
 
             try {
-                const response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
+                // Try streaming endpoint first (with fallback to regular send)
+                const streamResponse = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send-stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: next.message }),
                 });
-                const data = await response.json();
 
-                if (!response.ok || !data?.success) {
-                    sendFailed = true;
-                    const errorText = data?.error || response.statusText || 'Send failed';
-                    addMessage('system', errorText);
-                    sendQueue.unshift(next);
-                    savePendingQueue(sendQueue);
+                if (streamResponse.ok) {
+                    // Use streaming response
+                    const text = await processStreamingResponse(streamResponse, next.id);
+                    if (text && text.trim()) {
+                        rememberLocalAssistantEcho(text);
+                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
+                    }
                 } else {
+                    // Fallback to regular send endpoint
+                    const response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: next.message }),
+                    });
+                    const data = await response.json();
+
+                    if (!response.ok || !data?.success) {
+                        sendFailed = true;
+                        const errorText = data?.error || response.statusText || 'Send failed';
+                        addMessage('system', errorText);
+                        sendQueue.unshift(next);
+                        savePendingQueue(sendQueue);
+                        return;
+                    }
+
                     const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
                     const text = hasSanitizedResponse
                         ? data.responseText
@@ -3761,12 +3779,17 @@
                     if (data.images && Array.isArray(data.images)) {
                         data.images.forEach(img => addImage(img));
                     }
-
-                    }
-
-                    // Remove typing indicator after getting response
-                    await pollSessionHistory();
                 }
+
+                // Remove typing indicator after getting response
+                await pollSessionHistory();
+            } catch (error) {
+                sendFailed = true;
+                console.error('Send error:', error);
+                addMessage('system', `Send failed: ${error.message}`);
+                sendQueue.unshift(next);
+                savePendingQueue(sendQueue);
+            }
             } catch (error) {
                 sendFailed = true;
                 console.error('Send error:', error);
@@ -3792,6 +3815,70 @@
                 setOnlineState(true, queueStatusText(activeSessionKey));
                 if (remaining > 0) processQueue();
             }
+        }
+
+        // Process streaming response from /send-stream endpoint
+        async function processStreamingResponse(response, messageId) {
+            let fullText = '';
+            const eventSource = new EventSource(response.url);
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'connected') {
+                        console.log('Streaming connection established');
+                    } else if (data.type === 'complete') {
+                        fullText = data.responseText || '';
+                        if (data.toolCalls && Array.isArray(data.toolCalls)) {
+                            addMessage('miso', fullText || '', { 
+                                reactionKeyHint: `reply:${messageId}`, 
+                                toolCalls: data.toolCalls,
+                                model: data.model || null
+                            });
+                        } else if (fullText && fullText.trim()) {
+                            addMessage('miso', fullText || '', { 
+                                reactionKeyHint: `reply:${messageId}`, 
+                                model: data.model || null
+                            });
+                        }
+                    } else if (data.type === 'error') {
+                        console.error('Stream error:', data.error);
+                        addMessage('system', `Stream error: ${data.error}`);
+                    } else if (data.type === 'done') {
+                        eventSource.close();
+                    }
+                } catch (e) {
+                    console.error('Error parsing stream event:', e);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                eventSource.close();
+            };
+            
+            // Wait for stream to complete (with timeout)
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    eventSource.close();
+                    resolve(fullText);
+                }, 180000); // 3 minute timeout
+                
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'done') {
+                            clearTimeout(timeout);
+                            eventSource.close();
+                            resolve(fullText);
+                        }
+                    } catch (e) {
+                        // Ignore parse errors
+                    }
+                };
+            });
+            
+            return fullText;
         }
 
         async function sendSlashCommandToOpenClaw(rawSlashCommand) {
