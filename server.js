@@ -960,6 +960,106 @@ function inferAgentNameFromKey(sessionKey) {
   return null;
 }
 
+// Group chat functionality for multi-agent conversations
+// Parses @mentions and sends messages to multiple sessions
+
+/**
+ * Parse @mentions from a message string
+ * @param {string} message - The message to parse
+ * @returns {string[]} - Array of agent names mentioned
+ */
+function parseAgentMentions(message) {
+  if (!message || typeof message !== 'string') return [];
+  
+  // Match @agentName patterns (agent names can contain letters, numbers, dashes, underscores)
+  const mentionRegex = /@([a-zA-Z][a-zA-Z0-9_-]*)/g;
+  const mentions = [];
+  let match;
+  
+  while ((match = mentionRegex.exec(message)) !== null) {
+    mentions.push(match[1].toLowerCase());
+  }
+  
+  return mentions;
+}
+
+/**
+ * Get session key for an agent name
+ * @param {string} agentName - The agent name (e.g., 'miso', 'sage')
+ * @param {string[]} availableSessions - Array of available session keys
+ * @returns {string|null} - Session key or null if not found
+ */
+function getSessionKeyForAgent(agentName, availableSessions) {
+  const agentNameLower = agentName.toLowerCase();
+  
+  // Try to find a session that matches the agent name
+  for (const sessionKey of availableSessions) {
+    const inferredName = inferAgentNameFromKey(sessionKey);
+    if (inferredName && inferredName.toLowerCase() === agentNameLower) {
+      return sessionKey;
+    }
+    
+    // Also check if the session key contains the agent name
+    if (sessionKey.toLowerCase().includes(agentNameLower)) {
+      return sessionKey;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Send a message to multiple sessions (group chat)
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ * @param {string[]} sessionKeys - Array of session keys to send to
+ * @param {string} message - The message to send
+ * @param {number} timeoutSeconds - Timeout in seconds
+ * @returns {Promise<Object>} - Response object with results from all sessions
+ */
+async function sendToMultipleSessions(req, res, sessionKeys, message, timeoutSeconds) {
+  const results = [];
+  const errors = [];
+  
+  for (const sessionKey of sessionKeys) {
+    try {
+      const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+      const payload = await gatewayChatSend({ 
+        sessionKey, 
+        message, 
+        timeoutSeconds, 
+        origin: requestOrigin 
+      });
+      
+      const replyPayload = payload?.reply || payload?.response || payload?.details?.reply || payload;
+      const responseText = extractReplyText(replyPayload);
+      const filteredResponseText = sanitizeAssistantText(responseText);
+      const toolCalls = extractReplyToolCalls(replyPayload);
+      const model = extractReplyModel(replyPayload);
+      
+      // Get agent name from session key
+      const inferredAgentName = inferAgentNameFromKey(sessionKey) || sessionKey;
+      
+      results.push({
+        sessionKey,
+        agentName: inferredAgentName,
+        response: payload,
+        responseText: filteredResponseText,
+        toolCalls,
+        model,
+      });
+    } catch (error) {
+      console.error(`Error sending to ${sessionKey}:`, error.message);
+      const msg = String(error.message || 'send failed');
+      errors.push({
+        sessionKey,
+        error: msg,
+      });
+    }
+  }
+  
+  return { results, errors };
+}
 const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
 const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
 const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
@@ -2021,6 +2121,103 @@ app.post('/api/sessions/:sessionKey/send-stream', isAuthenticated, async (req, r
   }
 });
 
+// Group chat endpoint for multi-agent conversations
+// POST /api/sessions/group/send - Send message to multiple sessions
+app.post('/api/sessions/group/send', isAuthenticated, async (req, res) => {
+  const rawMessage = req.body?.message;
+  const requestedSessionKeys = req.body?.sessionKeys;
+  
+  if (typeof rawMessage !== 'string') {
+    return res.status(400).json({ error: 'Message must be a string' });
+  }
+
+  const message = rawMessage.trim();
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+  if (message.length > MAX_CHAT_MESSAGE_LENGTH) {
+    return res.status(413).json({
+      error: `Message exceeds ${MAX_CHAT_MESSAGE_LENGTH} characters`,
+      maxLength: MAX_CHAT_MESSAGE_LENGTH,
+    });
+  }
+
+  // Parse @mentions from the message
+  const mentionedAgents = parseAgentMentions(message);
+  
+  // If sessionKeys are provided, use them; otherwise use mentioned agents
+  let sessionKeys = [];
+  if (Array.isArray(requestedSessionKeys) && requestedSessionKeys.length > 0) {
+    sessionKeys = requestedSessionKeys.filter(k => typeof k === 'string' && k.trim());
+  } else if (mentionedAgents.length > 0) {
+    // Get all available sessions to find matching session keys
+    try {
+      const sessionsResult = await gatewayInvoke('sessions_list', { 
+        limit: 200, 
+        includeLastMessage: false 
+      });
+      const payload = unwrapToolResult(sessionsResult);
+      const availableSessions = payload?.sessions || payload?.data || payload?.items || [];
+      
+      // Find session keys for each mentioned agent
+      for (const agent of mentionedAgents) {
+        const sessionKey = getSessionKeyForAgent(agent, availableSessions);
+        if (sessionKey) {
+          sessionKeys.push(sessionKey);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch sessions for mention resolution:', err.message);
+    }
+  }
+  
+  // If still no session keys, return error
+  if (sessionKeys.length === 0) {
+    return res.status(400).json({ 
+      error: 'No valid sessions found. Please specify sessionKeys or @mention valid agents.',
+      mentionedAgents,
+    });
+  }
+
+  console.log(`Sending group message to ${sessionKeys.length} session(s):`, sessionKeys);
+
+  // Broadcast typing indicator start
+  for (const sessionKey of sessionKeys) {
+    broadcastToSseClients('typing.start', { sessionKey, timestamp: Date.now() });
+  }
+
+  try {
+    const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
+    const result = await sendToMultipleSessions(req, res, sessionKeys, message, timeoutSeconds);
+    
+    // Broadcast typing indicator stop
+    for (const sessionKey of sessionKeys) {
+      broadcastToSseClients('typing.stop', { sessionKey, timestamp: Date.now() });
+    }
+    
+    // Return results
+    res.json({
+      success: true,
+      sessionKeys,
+      results: result.results,
+      errors: result.errors,
+      totalSessions: sessionKeys.length,
+      successfulSessions: result.results.length,
+      failedSessions: result.errors.length,
+    });
+  } catch (error) {
+    console.error('Error in group send:', error.message);
+    
+    // Broadcast typing indicator stop
+    for (const sessionKey of sessionKeys) {
+      broadcastToSseClients('typing.stop', { sessionKey, timestamp: Date.now() });
+    }
+    
+    res.status(500).json({ error: String(error.message || 'group send failed') });
+  }
+});
+
+// ============ REACTION API ENDPOINTS ============
 // ============ REACTION API ENDPOINTS ============
 
 // GET /api/reactions/:sessionKey - Get all reactions for a session (batch load)
