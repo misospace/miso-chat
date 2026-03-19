@@ -40,3 +40,4 @@ jobs:
             Auto-generated PR to update package.json version after tag ${{ github.ref_name }}
           labels: chore
           base: main
+          commit-message: 'chore: bump package.json to ${{ steps.version.outputs.version }}'
