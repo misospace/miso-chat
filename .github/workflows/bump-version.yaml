@@ -22,7 +22,6 @@ jobs:
         id: version
         run: |
           TAG="${{ github.ref_name }}"
-          # Remove 'v' prefix if present
           VERSION="${TAG#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -30,14 +29,24 @@ jobs:
         run: |
           npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
 
-      - name: Create pull request
-        uses: peter-evans/create-pull-request@v7.0.3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: chore/bump-version-${{ steps.version.outputs.version }}
-          title: 'chore: bump package.json to ${{ steps.version.outputs.version }}'
-          body: |
-            Auto-generated PR to update package.json version after tag ${{ github.ref_name }}
-          labels: chore
-          base: main
-          commit-message: 'chore: bump package.json to ${{ steps.version.outputs.version }}'
+      - name: Create PR using GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          BRANCH_NAME="chore/bump-version-${VERSION}"
+          
+          # Create branch
+          git checkout -b "$BRANCH_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump package.json to ${VERSION}"
+          git push -u origin "$BRANCH_NAME"
+          
+          # Create PR using gh CLI
+          gh pr create \
+            --title "chore: bump package.json to ${VERSION}" \
+            --body "Auto-generated PR to update package.json version after tag ${{ github.ref_name }}" \
+            --label chore \
+            --base main
