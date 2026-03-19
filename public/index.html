@@ -191,6 +191,45 @@
             background: rgba(233, 69, 96, 0.15);
         }
 
+        .group-chat-toggle {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            transition: all 0.2s;
+        }
+
+        .group-chat-toggle:hover {
+            background: var(--bg-quaternary);
+        }
+
+        .group-chat-toggle input {
+            display: none;
+        }
+
+        .group-chat-toggle input:checked + span {
+            opacity: 1;
+            filter: none;
+        }
+
+        .group-chat-toggle span {
+            opacity: 0.4;
+            filter: grayscale(0.5);
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .group-chat-toggle input:checked + span:after {
+            content: '✓';
+            position: absolute;
+            font-size: 8px;
+            top: 2px;
+            right: 2px;
+        }
+
         .header-controls { position: relative; }
 
         .menu-toggle {
@@ -1100,6 +1139,10 @@
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="" disabled>Loading sessions...</option>
             </select>
+            <label class="group-chat-toggle" title="Group Chat">
+                <input type="checkbox" id="groupChatToggle" onchange="handleGroupChatToggle()">
+                <span>👥</span>
+            </label>
             <button class="icon-btn menu-toggle" id="menuBtn" title="More" aria-label="More">☰</button>
             <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
                 <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
@@ -1209,6 +1252,8 @@
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
         let sendQueue = loadPendingQueue();
+        let groupChatMode = false;
+        let groupChatSessionKeys = [];
         let sending = false;
         let historyPollTimer = null;
         let historyPollInFlight = false;
@@ -2830,10 +2875,25 @@
             menuThemeBtn.textContent = theme === 'light' ? '☀️ Theme: light' : '🌙 Theme: dark';
         }
 
-        function updateVersionInfo() {
+        async function updateVersionInfo() {
             const versionEl = document.getElementById('versionInfo');
             if (versionEl) {
-                versionEl.textContent = 'v0.0.0';
+                try {
+                    const response = await apiFetch('/api/health');
+                    const data = await response.json();
+                    versionEl.textContent = data.version ? `v${data.version}` : 'v0.0.0';
+                } catch (e) {
+                    versionEl.textContent = 'v0.0.0';
+                }
+            }
+        }
+
+        function handleGroupChatToggle() {
+            const toggle = document.getElementById('groupChatToggle');
+            groupChatMode = toggle.checked;
+            if (groupChatMode) {
+                // Collect all available session keys for group chat
+                groupChatSessionKeys = Array.from(sessionMetaByKey.keys()).filter(k => k && !k.startsWith('agent:'));
             }
         }
 
@@ -3730,10 +3790,13 @@
 
         async function processQueue() {
             if (sending || sendQueue.length === 0) return;
-            if (!currentSessionKey) return;
+            if (!currentSessionKey && sendQueue[0]?.sessionKeys === undefined) return;
 
             const activeSessionKey = currentSessionKey;
-            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === activeSessionKey);
+            const nextIndex = sendQueue.findIndex((item) => {
+                if (item.sessionKeys !== undefined) return true; // group chat item
+                return !item.sessionKey || item.sessionKey === activeSessionKey;
+            });
             if (nextIndex < 0) return;
 
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -3751,56 +3814,84 @@
             setOnlineState(true, queueStatusText(activeSessionKey));
 
             try {
-                // Try streaming endpoint first (with fallback to regular send)
-                const streamResponse = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send-stream`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: next.message }),
-                });
-
-                if (streamResponse.ok) {
-                    // Use streaming response
-                    const text = await processStreamingResponse(streamResponse, next.id);
-                    if (text && text.trim()) {
-                        rememberLocalAssistantEcho(text);
-                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
-                    }
-                } else {
-                    // Fallback to regular send endpoint
-                    const response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
+                let response, data;
+                
+                if (next.sessionKeys !== undefined) {
+                    // Group chat - use the group send endpoint
+                    response = await apiFetch('/api/sessions/group/send', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: next.message }),
+                        body: JSON.stringify({ 
+                            message: next.message,
+                            sessionKeys: next.sessionKeys 
+                        }),
                     });
-                    const data = await response.json();
+                    data = await response.json();
 
                     if (!response.ok || !data?.success) {
                         sendFailed = true;
-                        const errorText = data?.error || response.statusText || 'Send failed';
+                        const errorText = data?.error || response.statusText || 'Group send failed';
                         addMessage('system', errorText);
                         sendQueue.unshift(next);
                         savePendingQueue(sendQueue);
                         return;
                     }
 
-                    const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
-                    const text = hasSanitizedResponse
-                        ? data.responseText
-                        : (data.response?.text || data.response?.message);
-                    const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
-                    const model = data.response?.model || data.model || null;
-                    if ((text && text.trim()) || toolCalls.length > 0) {
-                        if (text && text.trim()) rememberLocalAssistantEcho(text);
-                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls, model });
+                    // Show response for group chat (use first successful result)
+                    const firstResult = data.results?.[0];
+                    const text = firstResult?.response?.text || firstResult?.responseText || '';
+                    if (text && text.trim()) {
+                        rememberLocalAssistantEcho(text);
+                        addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
                     }
+                } else {
+                    // Regular single-session send
+                    const streamResponse = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send-stream`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: next.message }),
+                    });
 
-                    // Handle images in response
-                    if (data.images && Array.isArray(data.images)) {
-                        data.images.forEach(img => addImage(img));
+                    if (streamResponse.ok) {
+                        const text = await processStreamingResponse(streamResponse, next.id);
+                        if (text && text.trim()) {
+                            rememberLocalAssistantEcho(text);
+                            addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
+                        }
+                    } else {
+                        response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: next.message }),
+                        });
+                        data = await response.json();
+
+                        if (!response.ok || !data?.success) {
+                            sendFailed = true;
+                            const errorText = data?.error || response.statusText || 'Send failed';
+                            addMessage('system', errorText);
+                            sendQueue.unshift(next);
+                            savePendingQueue(sendQueue);
+                            return;
+                        }
+
+                        const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
+                        const text = hasSanitizedResponse
+                            ? data.responseText
+                            : (data.response?.text || data.response?.message);
+                        const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                        const model = data.response?.model || data.model || null;
+                        if ((text && text.trim()) || toolCalls.length > 0) {
+                            if (text && text.trim()) rememberLocalAssistantEcho(text);
+                            addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls, model });
+                        }
+
+                        if (data.images && Array.isArray(data.images)) {
+                            data.images.forEach(img => addImage(img));
+                        }
                     }
                 }
 
-                // Remove typing indicator after getting response
                 await pollSessionHistory();
             } catch (error) {
                 sendFailed = true;
@@ -4008,12 +4099,17 @@
             messageInput.value = '';
             resizeMessageInput();
             messageInput.focus();
-            sendQueue.push({
+            const queueItem = {
                 id: queuedId,
-                sessionKey: currentSessionKey,
                 message: outgoingMessage,
                 createdAt,
-            });
+            };
+            if (groupChatMode && groupChatSessionKeys.length > 0) {
+                queueItem.sessionKeys = groupChatSessionKeys;
+            } else {
+                queueItem.sessionKey = currentSessionKey;
+            }
+            sendQueue.push(queueItem);
             savePendingQueue(sendQueue);
             updateTypingIndicator();
             processQueue();
