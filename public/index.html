@@ -3792,6 +3792,8 @@
                     if ((text && text.trim()) || toolCalls.length > 0) {
                         if (text && text.trim()) rememberLocalAssistantEcho(text);
                         addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls, model });
+                    }
+
                     // Handle images in response
                     if (data.images && Array.isArray(data.images)) {
                         data.images.forEach(img => addImage(img));
@@ -3800,13 +3802,6 @@
 
                 // Remove typing indicator after getting response
                 await pollSessionHistory();
-            } catch (error) {
-                sendFailed = true;
-                console.error('Send error:', error);
-                addMessage('system', `Send failed: ${error.message}`);
-                sendQueue.unshift(next);
-                savePendingQueue(sendQueue);
-            }
             } catch (error) {
                 sendFailed = true;
                 console.error('Send error:', error);
