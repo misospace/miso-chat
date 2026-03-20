@@ -2449,16 +2449,18 @@
 
         function mobileAuthDebug(event, detail = '') {
             if (!MOBILE_DEBUG_ENABLED) return;
-            const panel = ensureMobileDebugPanel();
-            if (!panel) return;
             const ts = new Date().toISOString().slice(11, 19);
             const safeEvent = sanitizeDebugValue(event);
             const safeDetail = detail ? maskMobileTokenInText(sanitizeDebugValue(detail)) : '';
             const line = '[' + ts + '] ' + safeEvent + (safeDetail ? ' :: ' + safeDetail : '');
+            console.log('[MobileAuthDebug]', line);
+
+            const panel = ensureMobileDebugPanel();
+            if (!panel) return;
             panel.textContent += line + '\n';
             panel.scrollTop = panel.scrollHeight;
-            console.log('[MobileAuthDebug]', event, detail);
         }
+
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
@@ -2566,6 +2568,11 @@
         }
 
         async function handleMobileAuthCallback(urlString, { reloadOnSuccess = false } = {}) {
+            if (!urlString || typeof urlString !== 'string') {
+                mobileAuthDebug('appUrlOpen callback invalid', String(urlString || ''));
+                return false;
+            }
+
             const url = new URL(urlString);
             mobileAuthDebug('appUrlOpen callback', urlString);
             if (!isExpectedMobileAuthCallback(url)) {
@@ -2602,6 +2609,30 @@
                 mobileAuthDebug('callback consume failed', error?.message || String(error));
                 await recoverFromMobileAuthCallbackFailure('auth callback token consume failed', error);
                 return true;
+            }
+        }
+
+
+        async function consumeMobileAuthTokenFromLaunchUrl() {
+            if (!isNativeCapacitor()) return false;
+
+            const appPlugin = window.Capacitor?.Plugins?.App;
+            if (!appPlugin || typeof appPlugin.getLaunchUrl !== 'function') {
+                mobileAuthDebug('launch url unavailable', 'App.getLaunchUrl missing');
+                return false;
+            }
+
+            try {
+                const launch = await appPlugin.getLaunchUrl();
+                const launchUrl = launch?.url || '';
+                mobileAuthDebug('launch url', launchUrl || '(none)');
+                if (!launchUrl) return false;
+
+                return await handleMobileAuthCallback(launchUrl, { reloadOnSuccess: false });
+            } catch (error) {
+                mobileAuthDebug('launch url check failed', error?.message || String(error));
+                console.error('[DeepLink] getLaunchUrl failed', error);
+                return false;
             }
         }
 
@@ -4413,7 +4444,10 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
                 }
             }
 
-            await consumeMobileAuthTokenFromUrl();
+            const consumedFromLaunchUrl = await consumeMobileAuthTokenFromLaunchUrl();
+            if (!consumedFromLaunchUrl) {
+                await consumeMobileAuthTokenFromUrl();
+            }
             await hydrateStoredSessionKey();
             await loadConfig();
             await loadSessions();
