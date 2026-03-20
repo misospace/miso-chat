@@ -1,0 +1,84 @@
+name: Ensure Release Notes
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to backfill notes for (optional, e.g. 0.4.4)'
+        required: false
+        type: string
+
+jobs:
+  ensure-release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve release id and tag
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RELEASE_ID: ${{ github.event.release.id }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            RELEASE_ID="$EVENT_RELEASE_ID"
+            TAG="$EVENT_TAG"
+          else
+            TAG="${INPUT_TAG:-}"
+            if [ -z "$TAG" ]; then
+              echo "No tag provided on workflow_dispatch; nothing to do."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            RELEASE_ID=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id')
+          fi
+
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate notes if release body is empty
+        if: steps.rel.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.rel.outputs.release_id }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          BODY=$(gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.body // ""')
+          BODY_TRIMMED=$(printf '%s' "$BODY" | tr -d '[:space:]')
+
+          if [ -n "$BODY_TRIMMED" ]; then
+            echo "Release $TAG already has notes."
+            exit 0
+          fi
+
+          echo "Release $TAG has empty notes; generating fallback notes..."
+          NOTES=$(gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$REPO/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq '.body // ""')
+
+          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+            NOTES='No release notes generated.'
+          fi
+
+          NOTES_JSON=$(jq -Rn --arg body "$NOTES" '{body:$body}')
+          gh api \
+            --method PATCH \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$REPO/releases/$RELEASE_ID" \
+            --input <(printf '%s' "$NOTES_JSON")
+
+          echo "Release notes updated for $TAG"
