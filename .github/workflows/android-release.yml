@@ -51,31 +51,51 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
         
+      - name: Resolve release notes
+        id: release_notes
+        if: github.event_name == 'release'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = (context.payload.release?.body || '').trim();
+            if (body) {
+              core.setOutput('notes', body);
+              return;
+            }
+
+            const generated = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.payload.release.tag_name,
+              target_commitish: context.payload.release.target_commitish || context.sha,
+            });
+
+            const notes = (generated.data?.body || '').trim();
+            core.setOutput('notes', notes || 'No release notes generated.');
+
       - name: Generate Update Manifest
         if: github.event_name == 'release'
         run: |
-          cat > update-manifest.json << EOF
-          {
-            "version": "${{ steps.version.outputs.version }}",
-            "tag": "${{ steps.version.outputs.version_tag }}",
-            "releaseDate": "${{ github.event.release.created_at }}",
-            "releaseNotes": "${{ github.event.release.body }}",
-            "channels": {
-              "stable": {
-                "version": "${{ steps.version.outputs.version }}",
-                "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
-                "mandatory": false
-              },
-              "beta": {
-                "version": "${{ steps.version.outputs.version }}",
-                "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
-                "mandatory": false
+          jq -n             --arg version "${{ steps.version.outputs.version }}"             --arg tag "${{ steps.version.outputs.version_tag }}"             --arg releaseDate "${{ github.event.release.created_at }}"             --arg releaseNotes "${{ steps.release_notes.outputs.notes }}"             --arg apkUrl "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk"             '{
+              version: $version,
+              tag: $tag,
+              releaseDate: $releaseDate,
+              releaseNotes: $releaseNotes,
+              channels: {
+                stable: {
+                  version: $version,
+                  apkUrl: $apkUrl,
+                  mandatory: false
+                },
+                beta: {
+                  version: $version,
+                  apkUrl: $apkUrl,
+                  mandatory: false
+                }
               }
-            }
-          }
-          EOF
+            }' > update-manifest.json
           cat update-manifest.json
-        
+
       - name: Upload APK to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
