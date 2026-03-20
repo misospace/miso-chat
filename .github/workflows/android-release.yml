@@ -115,22 +115,26 @@ jobs:
         with:
           node-version: '24'
           
-      - name: Install Capgo CLI
-        run: npm install -g @capgo/cli
-      
-      - name: Sync with Capgo
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Upload web bundle to Capgo channel
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
           CAPGO_APP_ID: ${{ secrets.CAPGO_APP_ID || 'chat.openclaw.miso' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          # Download the release assets
-          gh release download ${{ github.event.release.tag_name }} --pattern "*.apk" --dir ./release-assets
-          
-          # Upload to Capgo for OTA distribution
-          capgo upload \
-            --app-id $CAPGO_APP_ID \
-            --version ${{ github.event.release.tag_name }} \
-            --binary-path ./release-assets/*.apk \
-            --channel stable
+          if [ -z "$CAPGO_API_KEY" ]; then
+            echo "CAPGO_API_KEY is not set; skipping Capgo upload"
+            exit 0
+          fi
+
+          BUNDLE_VERSION="${RELEASE_TAG#v}"
+          echo "Uploading web bundle version ${BUNDLE_VERSION} for app ${CAPGO_APP_ID}"
+
+          npx @capgo/cli@latest bundle upload "$CAPGO_APP_ID" \
+            --apikey "$CAPGO_API_KEY" \
+            --path public \
+            --channel stable \
+            --bundle "$BUNDLE_VERSION"
 

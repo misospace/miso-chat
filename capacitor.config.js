@@ -1,6 +1,7 @@
 const serverUrl = process.env.CAPACITOR_SERVER_URL || process.env.CAPACITOR_URL || '';
 const cookiesEnabled = process.env.CAPACITOR_COOKIES_ENABLED !== 'false';
 const updateChannel = process.env.CAPACITOR_UPDATE_CHANNEL || 'stable';
+const updateMethod = process.env.CAPGO_UPDATE_METHOD || 'auto';
 
 const config = {
   appId: process.env.CAPACITOR_APP_ID || 'chat.openclaw.client',
@@ -24,7 +25,7 @@ const config = {
     },
     CapgoUpdater: {
       appId: process.env.CAPGO_APP_ID || 'chat.openclaw.miso',
-      updateMethod: process.env.CAPGO_UPDATE_METHOD || 'manual',
+      updateMethod: updateMethod,
       updateChannel: updateChannel,
       minUpdateDuration: 3000,
       maxUpdateDuration: 30000,
