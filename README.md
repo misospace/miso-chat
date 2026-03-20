@@ -18,6 +18,7 @@
 - 🐳 **Containerized**: Docker + Kubernetes deployment ready
 - 🔒 **Security hardened**: Non-root user, rate limiting, XSS protection
 - 🤖 **Automated**: CI/CD with linting, testing, and multi-platform builds
+- 📲 **OTA Updates**: Automatic over-the-air updates for native mobile apps (no external service required)
 
 ## Quick Start
 
@@ -255,3 +256,70 @@ env:
 ```
 
 This is optional. If `REDIS_URL` is not set, miso-chat falls back to in-memory sessions.
+
+## OTA Updates
+
+Miso Chat supports automatic over-the-air (OTA) updates for native mobile apps using the self-hosted Capgo Capacitor Updater. No external service or API key required.
+
+### How It Works
+
+1. When a new release is published on GitHub, the update manager automatically checks for updates
+2. If an update is available, you'll see a notification in the app
+3. Tap "Update Now" to download and install the update
+4. The app will restart with the new version
+
+### Requirements
+
+- Native mobile app build (Android APK or iOS app)
+- Capacitor platform with `@capgo/capacitor-updater` plugin installed
+- GitHub release with `update-manifest.json` asset
+
+### Manual Update Check
+
+To manually check for updates, call:
+
+```javascript
+await MobileUpdateManager.checkForUpdate();
+```
+
+### Update Notification
+
+The update notification appears when:
+- A new version is available
+- The app is running on a native mobile platform
+- `showNotification` is enabled in the config
+
+### Configuration
+
+The update manager can be configured with:
+
+```javascript
+await MobileUpdateManager.init({
+  autoCheck: true,        // Automatically check for updates on startup
+  showNotification: true, // Show update notification when available
+  checkInterval: 3600000, // Check every hour (default)
+  debug: false            // Enable debug logging
+});
+```
+
+### Release Workflow
+
+To publish an update:
+
+1. Update the version in `package.json`
+2. Build the native app: `npm run build:android` or `npm run build:ios`
+3. Create a GitHub release with the APK/IPA and `update-manifest.json`
+4. The update manager will automatically detect the new version
+
+### Troubleshooting
+
+**Updates not appearing?**
+- Check that the GitHub release includes `update-manifest.json`
+- Verify the version number in `package.json` is higher than the current version
+- Check browser console for update manager errors
+
+**Update failed?**
+- Ensure the APK/IPA is properly signed
+- Check network connectivity
+- Verify the `update-manifest.json` contains valid `bundleUrl`
+
