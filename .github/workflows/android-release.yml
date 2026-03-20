@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       
+      - name: Checkout release tag
+        if: github.event_name == 'release'
+        run: |
+          git fetch --tags
+          git checkout ${{ github.event.release.tag_name }}
+
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
@@ -36,17 +42,15 @@ jobs:
           npx cap sync android
           cd android
           ./gradlew assembleDebug
+
+      - name: Package OTA web bundle
+        run: |
+          cd public
+          zip -r ../dist.zip .
         
       - name: Get version from package.json
         id: version
         run: |
-          # Checkout the release tag to get the correct version
-          # This is needed because the workflow runs on the release event
-          # but defaults to the base branch, not the release tag
-          if [ "${{ github.event_name }}" == "release" ]; then
-            git fetch --tags
-            git checkout ${{ github.event.release.tag_name }}
-          fi
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
@@ -64,12 +68,14 @@ jobs:
               "stable": {
                 "version": "${{ steps.version.outputs.version }}",
                 "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
-                "mandatory": false
+                "mandatory": false,
+                "bundleUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/dist.zip"
               },
               "beta": {
                 "version": "${{ steps.version.outputs.version }}",
                 "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
-                "mandatory": false
+                "mandatory": false,
+                "bundleUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/dist.zip"
               }
             }
           }
@@ -82,10 +88,18 @@ jobs:
         with:
           files: |
             android/app/build/outputs/apk/debug/*.apk
+            dist.zip
             update-manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
+      - name: Upload OTA Bundle Artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: ota-web-bundle
+          path: dist.zip
+
       - name: Upload APK Artifacts
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7

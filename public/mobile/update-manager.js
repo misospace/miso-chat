@@ -1,384 +1,246 @@
 /**
- * Mobile Update Manager - Frontend Integration
- * 
- * This script provides the frontend interface for OTA updates.
- * Include this in your mobile app's HTML to enable update notifications.
- * 
- * Usage:
- * <script src="/mobile/update-manager.js"></script>
- * <script>
- *   // Initialize on page load
- *   MobileUpdateManager.init({
- *     autoCheck: true,
- *     showNotification: true
- *   });
- * </script>
+ * Mobile Update Manager - Self-hosted/No-cloud OTA
+ *
+ * Uses @capgo/capacitor-updater in manual mode with release artifacts.
+ * No Capgo account/API key required.
  */
 
 (function(window) {
   'use strict';
 
+  const GITHUB_API_URL = 'https://api.github.com';
+  const REPO_OWNER = 'joryirving';
+  const REPO_NAME = 'miso-chat';
+
+  function getUpdater() {
+    return window.CapacitorUpdater || window.CapgoUpdater || null;
+  }
+
+  function normalizeVersion(v) {
+    return String(v || '0.0.0').replace(/^v/, '');
+  }
+
+  function compareVersions(v1, v2) {
+    const a = normalizeVersion(v1).split('.').map(Number);
+    const b = normalizeVersion(v2).split('.').map(Number);
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const x = Number.isFinite(a[i]) ? a[i] : 0;
+      const y = Number.isFinite(b[i]) ? b[i] : 0;
+      if (x < y) return -1;
+      if (x > y) return 1;
+    }
+    return 0;
+  }
+
   const MobileUpdateManager = {
-    // Configuration
     config: {
       autoCheck: true,
       showNotification: true,
       notificationElement: 'update-notification',
-      checkInterval: 3600000, // 1 hour
-      debug: false
+      checkInterval: 3600000,
+      debug: false,
     },
-
-    // State
     currentBundle: null,
     availableUpdate: null,
     checkIntervalId: null,
 
-    /**
-     * Log message if debug mode is enabled
-     */
     log: function(...args) {
       if (this.config.debug) {
         console.log('[UpdateManager]', ...args);
       }
     },
 
-    /**
-     * Check if running in a Capacitor/Cordova environment
-     */
     isNativePlatform: function() {
-      return !!(window.Capacitor || window.Cordova);
+      return !!window.Capacitor;
     },
 
-    /**
-     * Initialize the update manager
-     * @param {Object} options - Configuration options
-     */
-    init: async function(options = {}) {
-      // Merge options with defaults
-      Object.assign(this.config, options);
-      
-      this.log('Initializing update manager...');
-
-      if (!this.isNativePlatform()) {
-        this.log('Not running on native platform, skipping initialization');
-        return;
-      }
-
-      try {
-        // Wait for device ready if using Cordova
-        if (window.Cordova && !window.Capacitor) {
-          await new Promise((resolve) => {
-            document.addEventListener('deviceready', resolve, { once: true });
-            // Timeout after 5 seconds
-            setTimeout(resolve, 5000);
-          });
-        }
-
-        // Get current bundle info
-        this.currentBundle = await this.getCurrentBundle();
-        this.log('Current bundle:', this.currentBundle);
-
-        // Check for updates if enabled
-        if (this.config.autoCheck) {
-          await this.checkForUpdate();
-          
-          // Set up periodic checking
-          if (this.config.checkInterval > 0) {
-            this.checkIntervalId = setInterval(() => {
-              this.checkForUpdate();
-            }, this.config.checkInterval);
-          }
-        }
-      } catch (error) {
-        console.error('[UpdateManager] Initialization error:', error);
-      }
-    },
-
-    /**
-     * Get current bundle information
-     */
     getCurrentBundle: async function() {
-      if (!window.Capacitor || !window.CapgoUpdater) {
-        return null;
-      }
-
+      const updater = getUpdater();
+      if (!updater || !updater.getCurrent) return null;
       try {
-        return await window.CapgoUpdater.getCurrent();
+        return await updater.getCurrent();
       } catch (error) {
         this.log('Error getting current bundle:', error);
         return null;
       }
     },
 
-    /**
-     * Check for available updates
-     */
-    checkForUpdate: async function() {
-      if (!this.isNativePlatform()) {
-        return { available: false };
+    getLatestManifest: async function() {
+      const releaseResp = await fetch(`${GITHUB_API_URL}/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'MisoChat-Mobile-UpdateManager'
+        }
+      });
+      if (!releaseResp.ok) {
+        throw new Error(`release lookup failed: ${releaseResp.status}`);
       }
 
+      const release = await releaseResp.json();
+      const manifestAsset = (release.assets || []).find((a) => a.name === 'update-manifest.json');
+      if (!manifestAsset) {
+        throw new Error('update-manifest.json asset not found on latest release');
+      }
+
+      const manifestResp = await fetch(manifestAsset.browser_download_url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!manifestResp.ok) {
+        throw new Error(`manifest fetch failed: ${manifestResp.status}`);
+      }
+
+      const manifest = await manifestResp.json();
+      return { release, manifest };
+    },
+
+    checkForUpdate: async function() {
+      if (!this.isNativePlatform()) return { available: false, reason: 'not-native' };
+
       try {
-        // Check with Capgo for available updates
-        if (window.CapgoUpdater) {
-          const info = await window.CapgoUpdater.check();
-          
-          if (info && info.available) {
-            this.availableUpdate = info;
-            this.log('Update available:', info);
-            
-            if (this.config.showNotification) {
-              this.showUpdateNotification(info);
-            }
-            
-            return { available: true, info };
-          }
+        this.currentBundle = await this.getCurrentBundle();
+        const currentVersion = this.currentBundle?.version || this.currentBundle?.id || '0.0.0';
+
+        const { release, manifest } = await this.getLatestManifest();
+        const stable = manifest?.channels?.stable || {};
+        const latestVersion = stable.version || manifest.version || release.tag_name;
+        const bundleUrl = stable.bundleUrl || manifest.bundleUrl || null;
+
+        if (!bundleUrl) {
+          return { available: false, reason: 'manifest-missing-bundleUrl' };
         }
 
-        return { available: false };
+        if (compareVersions(latestVersion, currentVersion) <= 0) {
+          return { available: false, reason: 'already-latest', currentVersion, latestVersion };
+        }
+
+        this.availableUpdate = {
+          version: normalizeVersion(latestVersion),
+          bundleUrl,
+          releaseNotes: release.body || manifest.releaseNotes || ''
+        };
+
+        if (this.config.showNotification) {
+          this.showUpdateNotification(this.availableUpdate);
+        }
+
+        return { available: true, info: this.availableUpdate, currentVersion };
       } catch (error) {
         this.log('Error checking for update:', error);
-        return { available: false, error: error.message };
+        return { available: false, reason: error.message };
       }
     },
 
-    /**
-     * Download available update
-     */
-    downloadUpdate: async function() {
-      if (!this.availableUpdate) {
-        return { success: false, reason: 'No update available' };
-      }
-
-      try {
-        const result = await window.CapgoUpdater.download();
-        this.log('Download result:', result);
-        
-        if (result) {
-          return { success: true, bundleId: result.id };
-        }
-        
-        return { success: false, reason: 'Download failed' };
-      } catch (error) {
-        this.log('Error downloading update:', error);
-        return { success: false, reason: error.message };
-      }
-    },
-
-    /**
-     * Install downloaded update
-     */
-    installUpdate: async function(bundleId) {
-      try {
-        await window.CapgoUpdater.set({ bundleId });
-        this.log('Update installed, restart required');
-        return { success: true };
-      } catch (error) {
-        this.log('Error installing update:', error);
-        return { success: false, reason: error.message };
-      }
-    },
-
-    /**
-     * Download and install update in one step
-     */
     update: async function() {
+      const updater = getUpdater();
+      if (!updater) return { success: false, reason: 'updater-unavailable' };
+      if (!this.availableUpdate) return { success: false, reason: 'no-update-available' };
+
       try {
-        const result = await window.CapgoUpdater.downloadAndSet();
-        this.log('Update result:', result);
-        return { success: true, bundleId: result?.id };
+        const downloaded = await updater.download({
+          version: this.availableUpdate.version,
+          url: this.availableUpdate.bundleUrl,
+        });
+
+        await updater.set(downloaded);
+        return { success: true, bundle: downloaded };
       } catch (error) {
-        this.log('Error updating:', error);
+        this.log('Error applying update:', error);
         return { success: false, reason: error.message };
       }
     },
 
-    /**
-     * Show update notification UI
-     */
-    showUpdateNotification: function(updateInfo) {
+    showUpdateNotification: function() {
       const notificationEl = document.getElementById(this.config.notificationElement);
-      
       if (notificationEl) {
-        // Show existing notification
         notificationEl.style.display = 'block';
         notificationEl.classList.add('visible');
-      } else {
-        // Create notification element
-        this.createNotificationElement(updateInfo);
+        return;
       }
+      this.createNotificationElement();
     },
 
-    /**
-     * Create notification element
-     */
-    createNotificationElement: function(updateInfo) {
+    createNotificationElement: function() {
       const notification = document.createElement('div');
       notification.id = this.config.notificationElement;
       notification.className = 'update-notification';
       notification.innerHTML = `
         <div class="update-notification-content">
           <h3>New Update Available</h3>
-          <p>A new version of the app is available for download.</p>
+          <p>A new version is ready. Apply now?</p>
           <div class="update-actions">
             <button id="update-later-btn" class="update-btn-secondary">Later</button>
             <button id="update-now-btn" class="update-btn-primary">Update Now</button>
           </div>
         </div>
       `;
-      
+
       document.body.appendChild(notification);
-      
-      // Add event listeners
-      document.getElementById('update-now-btn').addEventListener('click', () => {
-        this.handleUpdateNow();
-      });
-      
-      document.getElementById('update-later-btn').addEventListener('click', () => {
-        this.hideUpdateNotification();
-      });
+
+      document.getElementById('update-now-btn').addEventListener('click', () => this.handleUpdateNow());
+      document.getElementById('update-later-btn').addEventListener('click', () => this.hideUpdateNotification());
     },
 
-    /**
-     * Hide update notification
-     */
     hideUpdateNotification: function() {
       const notificationEl = document.getElementById(this.config.notificationElement);
-      if (notificationEl) {
-        notificationEl.classList.remove('visible');
-        setTimeout(() => {
-          notificationEl.style.display = 'none';
-        }, 300);
-      }
+      if (!notificationEl) return;
+      notificationEl.classList.remove('visible');
+      setTimeout(() => {
+        notificationEl.style.display = 'none';
+      }, 300);
     },
 
-    /**
-     * Handle update now button click
-     */
     handleUpdateNow: async function() {
-      const updateBtn = document.getElementById('update-now-btn');
-      if (updateBtn) {
-        updateBtn.disabled = true;
-        updateBtn.textContent = 'Downloading...';
+      const btn = document.getElementById('update-now-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Applying...';
       }
 
-      try {
-        const result = await this.update();
-        
-        if (result.success) {
-          // Show success message
-          const notificationEl = document.getElementById(this.config.notificationElement);
-          if (notificationEl) {
-            notificationEl.innerHTML = `
-              <div class="update-notification-content">
-                <h3>Update Ready</h3>
-                <p>The update has been downloaded. The app will restart to apply the update.</p>
-              </div>
-            `;
-          }
-          
-          // Restart app after a short delay
-          setTimeout(() => {
-            if (window.Capacitor && window.Capacitor.App) {
-              window.Capacitor.App.exitApp();
-            } else if (navigator.app) {
-              navigator.app.exitApp();
-            }
-          }, 2000);
-        } else {
-          // Show error
-          updateBtn.disabled = false;
-          updateBtn.textContent = 'Update Now';
-          alert('Failed to download update: ' + result.reason);
-        }
-      } catch (error) {
-        updateBtn.disabled = false;
-        updateBtn.textContent = 'Update Now';
-        alert('Error updating: ' + error.message);
+      const result = await this.update();
+      if (result.success) {
+        return;
       }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Update Now';
+      }
+      alert(`Failed to apply update: ${result.reason}`);
     },
 
-    /**
-     * List all available bundles
-     */
-    listBundles: async function() {
-      try {
-        const bundles = await window.CapgoUpdater.list();
-        return bundles || [];
-      } catch (error) {
-        this.log('Error listing bundles:', error);
-        return [];
-      }
-    },
+    init: async function(options = {}) {
+      Object.assign(this.config, options);
 
-    /**
-     * Delete a bundle by ID
-     */
-    deleteBundle: async function(bundleId) {
-      try {
-        await window.CapgoUpdater.delete({ bundleId });
-        return { success: true };
-      } catch (error) {
-        this.log('Error deleting bundle:', error);
-        return { success: false, reason: error.message };
+      if (!this.isNativePlatform()) {
+        this.log('Not native platform; skipping updater init');
+        return;
       }
-    },
 
-    /**
-     * Clean up old bundles (keep only the last N bundles)
-     */
-    cleanupBundles: async function(maxBundles = 3) {
-      const bundles = await this.listBundles();
-      
-      if (bundles.length <= maxBundles) {
-        return { deleted: 0 };
-      }
-      
-      // Sort by created date (oldest first)
-      bundles.sort((a, b) => new Date(a.created) - new Date(b.created));
-      
-      // Delete oldest bundles
-      const toDelete = bundles.slice(0, bundles.length - maxBundles);
-      let deleted = 0;
-      
-      for (const bundle of toDelete) {
+      const updater = getUpdater();
+      if (updater?.notifyAppReady) {
         try {
-          await this.deleteBundle(bundle.id);
-          deleted++;
+          await updater.notifyAppReady();
         } catch (error) {
-          this.log('Failed to delete bundle:', bundle.id, error);
+          this.log('notifyAppReady failed:', error);
         }
       }
-      
-      return { deleted };
+
+      if (this.config.autoCheck) {
+        await this.checkForUpdate();
+        if (this.config.checkInterval > 0) {
+          this.checkIntervalId = setInterval(() => this.checkForUpdate(), this.config.checkInterval);
+        }
+      }
     },
 
-    /**
-     * Destroy the update manager and clean up
-     */
     destroy: function() {
       if (this.checkIntervalId) {
         clearInterval(this.checkIntervalId);
         this.checkIntervalId = null;
       }
-      
-      const notificationEl = document.getElementById(this.config.notificationElement);
-      if (notificationEl) {
-        notificationEl.remove();
-      }
     }
   };
 
-  // Expose to global scope
   window.MobileUpdateManager = MobileUpdateManager;
-
-  // Auto-initialize if data attribute is present
-  document.addEventListener('DOMContentLoaded', () => {
-    const autoInitEl = document.querySelector('[data-update-auto-init]');
-    if (autoInitEl) {
-      const config = JSON.parse(autoInitEl.dataset.updateConfig || '{}');
-      MobileUpdateManager.init(config);
-    }
-  });
-
 })(window);
