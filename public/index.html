@@ -15,6 +15,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.json">
+    <!-- OTA Update Manager -->
+    <script src="/mobile/update-manager.js"></script>
     
     <style>
         :root {
@@ -4445,6 +4447,10 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
             }
 
             const consumedFromLaunchUrl = await consumeMobileAuthTokenFromLaunchUrl();
+            // Initialize OTA update manager
+            if (typeof MobileUpdateManager !== 'undefined') {
+                await MobileUpdateManager.init({ autoCheck: true, showNotification: true });
+            }
             if (!consumedFromLaunchUrl) {
                 await consumeMobileAuthTokenFromUrl();
             }
