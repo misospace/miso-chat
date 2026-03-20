@@ -765,12 +765,18 @@ app.get('/auth/mobile-complete', (req, res) => {
 });
 
 app.post('/api/mobile-auth/consume', (req, res) => {
+  console.log('[MobileAuth] consume endpoint called');
+  console.log('[MobileAuth] request body:', JSON.stringify(req.body));
+  console.log('[MobileAuth] request headers:', JSON.stringify(req.headers));
+  console.log('[MobileAuth] request authenticated:', req.isAuthenticated());
+  console.log('[MobileAuth] request user:', req.user);
   const token = typeof req.body?.token === 'string' ? req.body.token : '';
   if (!token) {
     return res.status(400).json({ error: 'Missing token' });
   }
 
   const user = consumeMobileAuthToken(token);
+  console.log('[MobileAuth] token valid, user:', user);
   if (!user) {
     return res.status(400).json({ error: 'Invalid or expired token' });
   }
@@ -778,15 +784,18 @@ app.post('/api/mobile-auth/consume', (req, res) => {
   return establishLoginSession(req, user, (err) => {
     if (err) {
       console.error('Mobile auth session setup failed:', err.message || err);
+      console.log('[MobileAuth] session established');
       return res.status(500).json({ error: 'Failed to establish session' });
     }
 
     return persistLoginSession(req, (saveErr) => {
       if (saveErr) {
         console.error('Mobile auth session persist failed:', saveErr.message || saveErr);
+        console.log('[MobileAuth] session persisted');
         return res.status(500).json({ error: 'Failed to establish session' });
       }
 
+      console.log('[MobileAuth] session persisted, authenticated:', req.isAuthenticated());
       return res.json({ ok: true });
     });
   });
