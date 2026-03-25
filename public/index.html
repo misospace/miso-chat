@@ -432,6 +432,64 @@
             padding: 10px 16px;
         }
 
+        .message-status-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .message.user .message-status-row {
+            justify-content: flex-end;
+        }
+
+        .message-status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.92);
+        }
+
+        .message.user .message-status-pill.state-queued,
+        .message.user .message-status-pill.state-sending {
+            background: rgba(255,255,255,0.12);
+            color: rgba(255,255,255,0.96);
+        }
+
+        .message.user .message-status-pill.state-failed {
+            background: rgba(27, 27, 39, 0.7);
+            border-color: rgba(255, 214, 102, 0.45);
+            color: #ffe08a;
+        }
+
+        .message-action-btn {
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        .message-action-btn:hover {
+            border-color: rgba(233, 69, 96, 0.55);
+        }
+
+        .message-action-btn:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
         .reaction-row {
             display: flex;
             flex-wrap: wrap;
@@ -1254,6 +1312,7 @@
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
         let sendQueue = loadPendingQueue();
+        const queueMessageElements = new Map();
         let groupChatMode = false;
         let groupChatSessionKeys = [];
         let sending = false;
@@ -1977,17 +2036,144 @@
                     sessionKey: null,
                     message: item,
                     createdAt: Date.now(),
+                    state: 'queued',
+                    attempts: 0,
+                    errorMessage: '',
                 };
             }
             if (!item || typeof item !== 'object') return null;
             const message = String(item.message || '').trim();
             if (!message) return null;
+            const sessionKeys = Array.isArray(item.sessionKeys)
+                ? item.sessionKeys.map((value) => String(value || '').trim()).filter(Boolean)
+                : undefined;
+            const normalizedState = String(item.state || '').toLowerCase();
+            const state = ['queued', 'sending', 'failed'].includes(normalizedState) ? normalizedState : 'queued';
+            const attempts = Number(item.attempts || 0);
             return {
                 id: item.id || queueId(),
                 sessionKey: item.sessionKey || null,
+                sessionKeys: sessionKeys && sessionKeys.length > 0 ? sessionKeys : undefined,
                 message,
                 createdAt: Number(item.createdAt || Date.now()),
+                state,
+                attempts: Number.isFinite(attempts) && attempts >= 0 ? attempts : 0,
+                errorMessage: String(item.errorMessage || '').trim(),
+                lastAttemptAt: Number(item.lastAttemptAt || 0) || 0,
             };
+        }
+
+        function findQueueItemById(queueItemId) {
+            return sendQueue.find((item) => item.id === queueItemId) || null;
+        }
+
+        function isTransientQueueError(errorLike) {
+            const text = String(errorLike || '').toLowerCase();
+            return (
+                text.includes('failed to fetch')
+                || text.includes('network')
+                || text.includes('offline')
+                || text.includes('timeout')
+                || text.includes('timed out')
+                || text.includes('econnrefused')
+                || text.includes('enotfound')
+                || text.includes('ehostunreach')
+                || text.includes('gateway handshake failed')
+                || text.includes('backend unavailable')
+                || text.includes('gateway ws disconnected')
+            );
+        }
+
+        function queueStateLabel(queueItem) {
+            const state = String(queueItem?.state || 'queued');
+            if (state === 'failed') {
+                return queueItem?.errorMessage
+                    ? `Failed · ${queueItem.errorMessage}`
+                    : 'Failed · tap retry';
+            }
+            if (state === 'sending') {
+                return queueItem?.attempts > 1
+                    ? `Retrying… attempt ${queueItem.attempts}`
+                    : 'Sending…';
+            }
+            if (queueItem?.attempts > 1) {
+                return `Queued · retry ${queueItem.attempts}`;
+            }
+            return 'Queued';
+        }
+
+        function clearQueueMessageElement(queueItemId) {
+            if (!queueItemId) return;
+            queueMessageElements.delete(queueItemId);
+        }
+
+        function bindQueueMessageElement(queueItemId, contentWrap) {
+            if (!queueItemId || !contentWrap) return;
+            queueMessageElements.set(queueItemId, contentWrap);
+        }
+
+        function updateQueueMessagePresentation(queueItem) {
+            if (!queueItem?.id) return;
+            const contentWrap = queueMessageElements.get(queueItem.id);
+            if (!contentWrap) return;
+
+            let statusRow = contentWrap.querySelector('[data-queue-status-row]');
+            if (!statusRow) {
+                statusRow = document.createElement('div');
+                statusRow.className = 'message-status-row';
+                statusRow.dataset.queueStatusRow = 'true';
+                contentWrap.appendChild(statusRow);
+            }
+
+            statusRow.innerHTML = '';
+
+            const pill = document.createElement('div');
+            pill.className = `message-status-pill state-${queueItem.state || 'queued'}`;
+            pill.textContent = queueStateLabel(queueItem);
+            statusRow.appendChild(pill);
+
+            if (queueItem.state === 'failed') {
+                const retryBtn = document.createElement('button');
+                retryBtn.type = 'button';
+                retryBtn.className = 'message-action-btn';
+                retryBtn.textContent = 'Retry';
+                retryBtn.disabled = sending && findQueueItemById(queueItem.id)?.state === 'sending';
+                retryBtn.addEventListener('click', () => retryQueueItem(queueItem.id));
+                statusRow.appendChild(retryBtn);
+            }
+        }
+
+        function markQueueItemFailed(queueItem, errorMessage) {
+            if (!queueItem) return;
+            queueItem.state = 'failed';
+            queueItem.errorMessage = String(errorMessage || 'Send failed').trim();
+            updateQueueMessagePresentation(queueItem);
+            savePendingQueue(sendQueue);
+        }
+
+        function requeueQueueItem(queueItem, errorMessage = '') {
+            if (!queueItem) return;
+            queueItem.state = 'queued';
+            queueItem.errorMessage = String(errorMessage || '').trim();
+            updateQueueMessagePresentation(queueItem);
+            savePendingQueue(sendQueue);
+        }
+
+        function retryQueueItem(queueItemId) {
+            const queueItem = findQueueItemById(queueItemId);
+            if (!queueItem) return;
+            if (queueItem.state === 'sending') return;
+            queueItem.state = 'queued';
+            queueItem.errorMessage = '';
+            const index = sendQueue.findIndex((item) => item.id === queueItemId);
+            if (index > 0) {
+                const [next] = sendQueue.splice(index, 1);
+                sendQueue.unshift(next);
+            }
+            updateQueueMessagePresentation(queueItem);
+            savePendingQueue(sendQueue);
+            clearQueueRetryTimer(true);
+            processQueue();
         }
 
         function loadPendingQueue() {
@@ -2024,8 +2210,10 @@
         }
 
         function queueCountForSession(sessionKey) {
-            if (!sessionKey) return sendQueue.length;
-            return sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey).length;
+            const scopedItems = !sessionKey
+                ? sendQueue
+                : sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
+            return scopedItems.filter((item) => item.state !== 'failed').length;
         }
 
         function loadReactions() {
@@ -3536,10 +3724,12 @@
         img.onerror = () => { div.innerHTML = '<a href="' + url + '" target="_blank" style="display:block;padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:8px;">View Image</a>'; div.querySelector('a').style.color = 'var(--accent)'; };
         div.appendChild(img); messagesDiv.appendChild(div);
     }
-
     function addMessage(sender, content, options = {}) {
             const div = document.createElement('div');
             div.className = `message ${sender}`;
+            if (options.queueItem?.id) {
+                div.dataset.queueItemId = options.queueItem.id;
+            }
 
             if (sender === 'miso') {
                 const avatar = document.createElement('img');
@@ -3682,6 +3872,10 @@
 
             div.appendChild(contentWrap);
             messagesDiv.appendChild(div);
+            if (options.queueItem?.id) {
+                bindQueueMessageElement(options.queueItem.id, contentWrap);
+                updateQueueMessagePresentation(options.queueItem);
+            }
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
             if (sender === 'miso' && !options.suppressNotify) {
@@ -3692,6 +3886,7 @@
         function renderHistory(messages) {
             messagesDiv.innerHTML = '';
             historyMessageKeys = new Set();
+            queueMessageElements.clear();
 
             if (!Array.isArray(messages) || messages.length === 0) {
                 addMessage('system', '📝 New session');
@@ -3722,13 +3917,19 @@
         function renderPendingForSession(sessionKey) {
             const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
             pending.forEach((item) => {
-                addMessage('user', `${item.message} ⏳`, {
+                addMessage('user', item.message, {
                     reactionKeyHint: `queued:${item.id}`,
                     timestamp: item.createdAt || Date.now(),
+                    queueItem: item,
                 });
             });
-            if (pending.length > 0) {
-                addMessage('system', `${pending.length} queued message${pending.length > 1 ? 's' : ''} will retry.`);
+            const queuedCount = pending.filter((item) => item.state !== 'failed').length;
+            const failedCount = pending.filter((item) => item.state === 'failed').length;
+            if (queuedCount > 0) {
+                addMessage('system', `${queuedCount} queued message${queuedCount > 1 ? 's' : ''} will retry.`);
+            }
+            if (failedCount > 0) {
+                addMessage('system', `${failedCount} failed message${failedCount > 1 ? 's have' : ' has'} retry controls.`);
             }
         }
 
@@ -3918,7 +4119,8 @@
 
             const activeSessionKey = currentSessionKey;
             const nextIndex = sendQueue.findIndex((item) => {
-                if (item.sessionKeys !== undefined) return true; // group chat item
+                if (item.state === 'failed') return false;
+                if (item.sessionKeys !== undefined) return true;
                 return !item.sessionKey || item.sessionKey === activeSessionKey;
             });
             if (nextIndex < 0) return;
@@ -3931,7 +4133,13 @@
             clearQueueRetryTimer();
             sending = true;
             let sendFailed = false;
-            const [next] = sendQueue.splice(nextIndex, 1);
+            let failureIsTransient = false;
+            const next = sendQueue[nextIndex];
+            next.state = 'sending';
+            next.attempts = Math.max(Number(next.attempts || 0), 0) + 1;
+            next.lastAttemptAt = Date.now();
+            next.errorMessage = '';
+            updateQueueMessagePresentation(next);
             savePendingQueue(sendQueue);
             updateTypingIndicator();
 
@@ -3939,9 +4147,8 @@
 
             try {
                 let response, data;
-                
+
                 if (next.sessionKeys !== undefined) {
-                    // Group chat - use the group send endpoint
                     response = await apiFetch('/api/sessions/group/send', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3955,13 +4162,16 @@
                     if (!response.ok || !data?.success) {
                         sendFailed = true;
                         const errorText = data?.error || response.statusText || 'Group send failed';
+                        failureIsTransient = isTransientQueueError(errorText) || response.status >= 500;
                         addMessage('system', errorText);
-                        sendQueue.unshift(next);
-                        savePendingQueue(sendQueue);
+                        if (failureIsTransient) {
+                            requeueQueueItem(next, errorText);
+                        } else {
+                            markQueueItemFailed(next, errorText);
+                        }
                         return;
                     }
 
-                    // Show response for group chat (use first successful result)
                     const firstResult = data.results?.[0];
                     const text = firstResult?.response?.text || firstResult?.responseText || '';
                     if (text && text.trim()) {
@@ -3969,7 +4179,6 @@
                         addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
                     }
                 } else {
-                    // Regular single-session send
                     const streamResponse = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send-stream`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3977,10 +4186,13 @@
                     });
 
                     if (streamResponse.ok) {
-                        const text = await processStreamingResponse(streamResponse, next.id);
-                        if (text && text.trim()) {
-                            rememberLocalAssistantEcho(text);
-                            addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}` });
+                        const streamResult = await processStreamingResponse(streamResponse, next.id);
+                        const text = streamResult?.text || '';
+                        const toolCalls = Array.isArray(streamResult?.toolCalls) ? streamResult.toolCalls : [];
+                        const model = streamResult?.model || null;
+                        if ((text && text.trim()) || toolCalls.length > 0) {
+                            if (text && text.trim()) rememberLocalAssistantEcho(text);
+                            addMessage('miso', text || '', { reactionKeyHint: `reply:${next.id}`, toolCalls, model });
                         }
                     } else {
                         response = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionKey)}/send`, {
@@ -3993,9 +4205,13 @@
                         if (!response.ok || !data?.success) {
                             sendFailed = true;
                             const errorText = data?.error || response.statusText || 'Send failed';
+                            failureIsTransient = isTransientQueueError(errorText) || response.status >= 500;
                             addMessage('system', errorText);
-                            sendQueue.unshift(next);
-                            savePendingQueue(sendQueue);
+                            if (failureIsTransient) {
+                                requeueQueueItem(next, errorText);
+                            } else {
+                                markQueueItemFailed(next, errorText);
+                            }
                             return;
                         }
 
@@ -4016,13 +4232,24 @@
                     }
                 }
 
+                const sentIndex = sendQueue.findIndex((item) => item.id === next.id);
+                if (sentIndex >= 0) {
+                    sendQueue.splice(sentIndex, 1);
+                    savePendingQueue(sendQueue);
+                }
+                clearQueueMessageElement(next.id);
                 await pollSessionHistory();
             } catch (error) {
                 sendFailed = true;
                 console.error('Send error:', error);
-                addMessage('system', `Send failed: ${error.message}`);
-                sendQueue.unshift(next);
-                savePendingQueue(sendQueue);
+                const errorText = `Send failed: ${error.message}`;
+                failureIsTransient = isTransientQueueError(error?.message || errorText);
+                addMessage('system', errorText);
+                if (failureIsTransient) {
+                    requeueQueueItem(next, error.message || 'Network error');
+                } else {
+                    markQueueItemFailed(next, error.message || 'Send failed');
+                }
             } finally {
                 sending = false;
                 const remaining = queueCountForSession(activeSessionKey);
@@ -4031,8 +4258,10 @@
                 if (sendFailed) {
                     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                         setOnlineState(false, waitingForInternetStatus(activeSessionKey));
-                    } else {
+                    } else if (failureIsTransient) {
                         scheduleQueueRetry();
+                    } else {
+                        setOnlineState(true, queueStatusText(activeSessionKey));
                     }
                     refreshBackendHealth();
                     return;
@@ -4045,68 +4274,77 @@
         }
 
         // Process streaming response from /send-stream endpoint
-        async function processStreamingResponse(response, messageId) {
+        async function processStreamingResponse(response, _messageId) {
+            const reader = response.body?.getReader?.();
+            if (!reader) {
+                throw new Error('Streaming response body unavailable');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
             let fullText = '';
-            const eventSource = new EventSource(response.url);
-            
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'connected') {
-                        console.log('Streaming connection established');
-                    } else if (data.type === 'complete') {
-                        fullText = data.responseText || '';
-                        if (data.toolCalls && Array.isArray(data.toolCalls)) {
-                            addMessage('miso', fullText || '', { 
-                                reactionKeyHint: `reply:${messageId}`, 
-                                toolCalls: data.toolCalls,
-                                model: data.model || null
-                            });
-                        } else if (fullText && fullText.trim()) {
-                            addMessage('miso', fullText || '', { 
-                                reactionKeyHint: `reply:${messageId}`, 
-                                model: data.model || null
-                            });
-                        }
-                    } else if (data.type === 'error') {
-                        console.error('Stream error:', data.error);
-                        addMessage('system', `Stream error: ${data.error}`);
-                    } else if (data.type === 'done') {
-                        eventSource.close();
+            let toolCalls = [];
+            let model = null;
+            let streamError = '';
+            let sawDone = false;
+
+            const handleSseChunk = (chunk) => {
+                const lines = chunk.split(/\r?\n/);
+                const dataLines = lines
+                    .filter((line) => line.startsWith('data:'))
+                    .map((line) => line.slice(5).trim())
+                    .filter(Boolean);
+
+                for (const raw of dataLines) {
+                    let data;
+                    try {
+                        data = JSON.parse(raw);
+                    } catch (error) {
+                        console.error('Error parsing stream event:', error);
+                        continue;
                     }
-                } catch (e) {
-                    console.error('Error parsing stream event:', e);
+
+                    if (data.type === 'complete') {
+                        fullText = data.responseText || '';
+                        toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                        model = data.model || null;
+                    } else if (data.type === 'error') {
+                        streamError = String(data.error || 'Stream failed');
+                    } else if (data.type === 'done') {
+                        sawDone = true;
+                    }
                 }
             };
-            
-            eventSource.onerror = (error) => {
-                console.error('EventSource error:', error);
-                eventSource.close();
-            };
-            
-            // Wait for stream to complete (with timeout)
-            await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    eventSource.close();
-                    resolve(fullText);
-                }, 180000); // 3 minute timeout
-                
-                eventSource.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'done') {
-                            clearTimeout(timeout);
-                            eventSource.close();
-                            resolve(fullText);
-                        }
-                    } catch (e) {
-                        // Ignore parse errors
-                    }
-                };
-            });
-            
-            return fullText;
+
+            while (true) {
+                const { value, done } = await reader.read();
+                buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+                let separatorIndex;
+                while ((separatorIndex = buffer.indexOf('\n\n')) >= 0) {
+                    const chunk = buffer.slice(0, separatorIndex);
+                    buffer = buffer.slice(separatorIndex + 2);
+                    handleSseChunk(chunk);
+                }
+
+                if (done) break;
+            }
+
+            if (buffer.trim()) {
+                handleSseChunk(buffer);
+            }
+
+            if (streamError) {
+                throw new Error(streamError);
+            }
+
+            if (!sawDone) {
+                throw new Error('Generation was interrupted before completion');
+            }
+
+            return { text: fullText, toolCalls, model };
         }
+
 
         async function sendSlashCommandToOpenClaw(rawSlashCommand) {
             if (!currentSessionKey) {
@@ -4216,18 +4454,22 @@
 
             const queuedId = queueId();
             const createdAt = Date.now();
-            addMessage('user', outgoingMessage, {
-                reactionKeyHint: `queued:${queuedId}`,
-                timestamp: createdAt,
-            });
-            messageInput.value = '';
-            resizeMessageInput();
-            messageInput.focus();
             const queueItem = {
                 id: queuedId,
                 message: outgoingMessage,
                 createdAt,
+                state: 'queued',
+                attempts: 0,
+                errorMessage: '',
             };
+            addMessage('user', outgoingMessage, {
+                reactionKeyHint: `queued:${queuedId}`,
+                timestamp: createdAt,
+                queueItem,
+            });
+            messageInput.value = '';
+            resizeMessageInput();
+            messageInput.focus();
             if (groupChatMode && groupChatSessionKeys.length > 0) {
                 queueItem.sessionKeys = groupChatSessionKeys;
             } else {
