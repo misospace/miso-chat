@@ -193,44 +193,16 @@
             background: rgba(233, 69, 96, 0.15);
         }
 
-        .group-chat-toggle {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            padding: 6px 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: var(--bg-tertiary);
-            transition: all 0.2s;
-        }
 
-        .group-chat-toggle:hover {
-            background: var(--bg-quaternary);
-        }
+        
 
-        .group-chat-toggle input {
-            display: none;
-        }
+        
 
-        .group-chat-toggle input:checked + span {
-            opacity: 1;
-            filter: none;
-        }
+        
 
-        .group-chat-toggle span {
-            opacity: 0.4;
-            filter: grayscale(0.5);
-            font-size: 16px;
-            transition: all 0.2s;
-        }
+        
 
-        .group-chat-toggle input:checked + span:after {
-            content: '✓';
-            position: absolute;
-            font-size: 8px;
-            top: 2px;
-            right: 2px;
-        }
+        
 
         .header-controls { position: relative; }
 
@@ -1199,10 +1171,6 @@
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="" disabled>Loading sessions...</option>
             </select>
-            <label class="group-chat-toggle" title="Group Chat">
-                <input type="checkbox" id="groupChatToggle" onchange="handleGroupChatToggle()">
-                <span>👥</span>
-            </label>
             <button class="icon-btn menu-toggle" id="menuBtn" title="More" aria-label="More">☰</button>
             <div class="action-menu" id="actionMenu" role="menu" aria-label="Actions">
                 <button type="button" id="menuSoundBtn" role="menuitem">🔕 Toggle sound</button>
@@ -1313,8 +1281,6 @@
         let defaultSessionKey = 'agent:main:main';
         let sendQueue = loadPendingQueue();
         const queueMessageElements = new Map();
-        let groupChatMode = false;
-        let groupChatSessionKeys = [];
         let sending = false;
         let historyPollTimer = null;
         let historyPollInFlight = false;
@@ -3200,13 +3166,6 @@
             }
         }
 
-        function handleGroupChatToggle() {
-            const toggle = document.getElementById('groupChatToggle');
-            groupChatMode = toggle.checked;
-            if (groupChatMode) {
-                // Collect all available session keys for group chat
-                groupChatSessionKeys = Array.from(sessionMetaByKey.keys()).filter(k => k && !k.startsWith('agent:'));
-            }
         }
 
         function updateDocumentTitle() {
@@ -4148,27 +4107,7 @@
             try {
                 let response, data;
 
-                if (next.sessionKeys !== undefined) {
-                    response = await apiFetch('/api/sessions/group/send', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            message: next.message,
-                            sessionKeys: next.sessionKeys 
-                        }),
-                    });
-                    data = await response.json();
-
-                    if (!response.ok || !data?.success) {
-                        sendFailed = true;
-                        const errorText = data?.error || response.statusText || 'Group send failed';
-                        failureIsTransient = isTransientQueueError(errorText) || response.status >= 500;
-                        addMessage('system', errorText);
-                        if (failureIsTransient) {
-                            requeueQueueItem(next, errorText);
-                        } else {
                             markQueueItemFailed(next, errorText);
-                        }
                         return;
                     }
 
@@ -4470,9 +4409,6 @@
             messageInput.value = '';
             resizeMessageInput();
             messageInput.focus();
-            if (groupChatMode && groupChatSessionKeys.length > 0) {
-                queueItem.sessionKeys = groupChatSessionKeys;
-            } else {
                 queueItem.sessionKey = currentSessionKey;
             }
             sendQueue.push(queueItem);
