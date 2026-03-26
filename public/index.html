@@ -3915,6 +3915,10 @@
         }
 
         function renderPendingForSession(sessionKey) {
+            // Clear existing pending message elements to prevent duplicates on reconnect
+            const pendingMessages = messagesDiv.querySelectorAll('.message[data-reaction-key-hint^="queued:"], .message[data-reaction-key-hint^="queued:"]');
+            pendingMessages.forEach((msg) => msg.remove());
+            
             const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
             pending.forEach((item) => {
                 addMessage('user', item.message, {
