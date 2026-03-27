@@ -6,7 +6,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
@@ -315,14 +315,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const cfIp = req.headers['cf-connecting-ip'];
-    if (typeof cfIp === 'string' && cfIp.trim()) return cfIp.trim();
+    if (typeof cfIp === 'string' && cfIp.trim()) {
+      return ipKeyGenerator(cfIp.trim());
+    }
 
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.trim()) {
-      return forwarded.split(',')[0].trim();
+      return ipKeyGenerator(forwarded.split(',')[0].trim());
     }
 
-    return req.ip;
+    return ipKeyGenerator(req.ip);
   },
   skip: (req) => {
     // Never rate-limit realtime/bootstrap reads; this can deadlock the UI.
