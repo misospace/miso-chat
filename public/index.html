@@ -1195,11 +1195,8 @@
     
     <div class="input-area">
         <div class="input-wrapper">
-            <div id="attachmentPreviewHost"></div>
             <textarea id="messageInput" rows="1" placeholder="Message Assistant..." autocomplete="off" autocorrect="off" autocapitalize="sentences"></textarea>
         </div>
-        <input type="file" id="attachmentInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
-        <button type="button" class="emoji-btn" id="attachBtn" title="Attach image">📎</button>
         <button type="button" class="emoji-btn" id="emojiBtn" title="Add emoji">😊</button>
         <button type="button" class="send-btn" id="sendBtn" onclick="sendMessage()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1293,13 +1290,6 @@
         let historyMessageKeys = new Set();
         let localAssistantEchoes = new Map();
         let storedSessionKey = null;
-        let attachmentConfig = {
-            maxBytes: 5 * 1024 * 1024,
-            allowedTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
-            uploadPath: '/api/attachments',
-        };
-        let pendingAttachment = null;
-
         function isNativeCapacitor() {
             return typeof window.Capacitor !== 'undefined'
                 && typeof window.Capacitor.isNativePlatform === 'function'
@@ -2817,9 +2807,6 @@
 
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
-        const attachmentInput = document.getElementById('attachmentInput');
-        const attachBtn = document.getElementById('attachBtn');
-        const attachmentPreviewHost = document.getElementById('attachmentPreviewHost');
         const sendBtn = document.getElementById('sendBtn');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
