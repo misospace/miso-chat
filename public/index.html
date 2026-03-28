@@ -2403,7 +2403,7 @@
         async function testBackendConnection(baseUrl) {
             const normalized = normalizeBaseUrl(baseUrl);
             if (!normalized) {
-                return { ok: false, message: `Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}` };
+                return { ok: false, message: `Invalid OpenClaw Gateway URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}` };
             }
 
             const controller = new AbortController();
@@ -2459,19 +2459,19 @@
         async function openBackendSettings() {
             const current = getApiBaseUrl();
             const entered = window.prompt(
-                `Backend URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`,
+                `OpenClaw Gateway URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`,
                 current || SANITIZED_SERVER_EXAMPLE_URL,
             );
             if (entered === null) return;
 
             const normalized = normalizeBaseUrl(entered);
             if (!normalized) {
-                window.alert(`Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+                window.alert(`Invalid OpenClaw Gateway URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
                 return;
             }
 
             const result = await testBackendConnection(normalized);
-            const save = window.confirm(`${result.ok ? '✅' : '❌'} ${result.message}\n\nSave this backend URL?`);
+            const save = window.confirm(`${result.ok ? '✅' : '❌'} ${result.message}\n\nSave this OpenClaw Gateway URL?`);
             if (!save) return;
 
             setApiBaseUrl(normalized);
