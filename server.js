@@ -822,6 +822,10 @@ const gatewayWsManager = new GatewayWsManager({
   clientVersion: `miso-chat/${APP_VERSION}`,
   clientMode: 'ui',
 });
+gatewayWsManager.on('error', (err) => {
+  gatewayWsLastError = String(err?.message || err || 'unknown error');
+  console.error('⚠️ Gateway WS error:', err?.message || err);
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -1067,11 +1071,6 @@ const initGatewayWsManager = async () => {
       } else {
         console.log('✅ Gateway WS manager connected');
       }
-    });
-    
-    gatewayWsManager.on('error', (err) => {
-      gatewayWsLastError = String(err?.message || err || 'unknown error');
-      console.error('⚠️ Gateway WS error:', err.message);
     });
     
     // Forward gateway events to SSE clients
