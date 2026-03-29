@@ -1089,7 +1089,7 @@ const initGatewayWsManager = async () => {
 // Start server and initialize WS manager
 server.listen(PORT, async () => {
   console.log(`
-🎉 ${APP_TITLE} server running on port ${PORT}
+🎉 miso-chat v${APP_VERSION} server running on port ${PORT}
    
    Gateway: ${GATEWAY_URL}
    Gateway WS: ${getGatewayWsUrl()}
