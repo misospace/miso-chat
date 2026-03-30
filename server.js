@@ -766,7 +766,7 @@ const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
 const GATEWAY_WS_CLIENT_MODE = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
 const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH || path.join(process.env.HOME || '/home/node', '.openclaw', 'identity', 'device.json');
 const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
-const REQUESTED_GATEWAY_SCOPES = ['operator.read','operator.write','operator.pairing','chat.send','sessions.send','sessions.list','sessions.history'];
+const REQUESTED_GATEWAY_SCOPES = ['operator.read','operator.write','operator.admin','operator.pairing','chat.send','sessions.send','sessions.list','sessions.history'];
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 let cachedGatewayDeviceIdentity = null;
 
@@ -1030,7 +1030,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
     }
 
     if (!payload) {
-      historyResult = await gatewayInvoke('sessions_history', { sessionKey });
+      historyResult = await gatewayInvoke('sessions_history', { sessionKey, limit: 100 });
       payload = unwrapToolResult(historyResult);
     }
     const messages = (Array.isArray(payload?.messages)
@@ -1105,7 +1105,7 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
 
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('chat.send', { sessionKey, text }, 30);
+        const frame = await gatewayWsManager.send('chat.send', { sessionKey, message: text, deliver: false, idempotencyKey: gatewayWsManager.createRequestId('msg') }, 30);
         payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
       } catch (wsErr) {
         console.warn('chat.send via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
@@ -1113,7 +1113,7 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
     }
 
     if (!payload) {
-      result = await gatewayInvoke('chat_send', { sessionKey, text });
+      result = await gatewayInvoke('sessions_send', { sessionKey, text });
       payload = unwrapToolResult(result);
     }
 
@@ -1138,7 +1138,7 @@ app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => 
 
     if (gatewayWsManager?.isConnected?.()) {
       try {
-        const frame = await gatewayWsManager.send('chat.send', { sessionKey, text }, 30);
+        const frame = await gatewayWsManager.send('chat.send', { sessionKey, message: text, deliver: false, idempotencyKey: gatewayWsManager.createRequestId('msg') }, 30);
         payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
       } catch (wsErr) {
         console.warn('chat.send stream shim via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
@@ -1146,7 +1146,7 @@ app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => 
     }
 
     if (!payload) {
-      result = await gatewayInvoke('chat_send', { sessionKey, text });
+      result = await gatewayInvoke('sessions_send', { sessionKey, text });
       payload = unwrapToolResult(result);
     }
 
