@@ -938,13 +938,14 @@ function normalizeSessionItems(...sources) {
 
       if (!sessionKey) return null;
 
+      const inferredAgentName = inferAgentNameFromKey(sessionKey);
       const title = String(item?.title || item?.name || '').trim();
-      const agentName = String(item?.agentName || item?.agent?.name || '').trim();
+      const agentName = String(item?.agentName || item?.agent?.name || inferredAgentName || '').trim();
       const displayName = String(
         item?.displayName
-        || agentName
         || title
-        || inferAgentNameFromKey(sessionKey)
+        || agentName
+        || inferredAgentName
         || sessionKey
       ).trim();
 
@@ -1353,21 +1354,30 @@ function unwrapToolResult(result) {
   return result;
 }
 
+function humanizeAgentToken(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^g-agent-/, '')
+    .replace(/^agent[-:]/, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\w/g, (c) => c.toUpperCase());
+}
+
 function inferAgentNameFromKey(sessionKey) {
   if (!sessionKey || typeof sessionKey !== "string") return null;
-  
-  // Handle agent:agentName:thread format (most common)
+
   if (sessionKey.startsWith("agent:")) {
     const parts = sessionKey.split(":");
-    if (parts.length >= 2) {
-      const agentName = parts[1];
-      // Capitalize first letter, replace dashes/underscores with spaces
-      return agentName
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+    if (parts.length >= 2 && parts[1]) {
+      return humanizeAgentToken(parts[1]);
     }
   }
-  
+
+  const webchatMatch = sessionKey.match(/(?:^|:)g-agent-([a-z0-9_]+)(?:[-:]|$)/i);
+  if (webchatMatch?.[1]) {
+    return humanizeAgentToken(webchatMatch[1]);
+  }
+
   return null;
 }
 
