@@ -2502,7 +2502,7 @@
 
         const SANITIZED_SERVER_EXAMPLE_URL = 'https://miso-chat.example.com';
 
-        const MOBILE_DEBUG_ENABLED = true;
+        const MOBILE_DEBUG_ENABLED = new URLSearchParams(window.location.search).get('mobile_debug') === '1';
         let mobileAuthDebugPanel = null;
 
         function sanitizeDebugValue(value) {
