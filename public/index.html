@@ -2853,9 +2853,16 @@
             menuThemeBtn.textContent = theme === 'light' ? '☀️ Theme: light' : '🌙 Theme: dark';
         }
 
-        function updateVersionInfo() {
+        async function updateVersionInfo() {
             const versionEl = document.getElementById('versionInfo');
-            if (versionEl) {
+            if (!versionEl) return;
+            try {
+                const response = await apiFetch('/api/health');
+                if (!response.ok) throw new Error(`health ${response.status}`);
+                const health = await response.json();
+                const version = String(health?.version || '').trim();
+                versionEl.textContent = version ? `v${version.replace(/^v/i, '')}` : 'v0.0.0';
+            } catch {
                 versionEl.textContent = 'v0.0.0';
             }
         }

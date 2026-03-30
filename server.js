@@ -965,7 +965,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('sessions.list', {}, 10);
+        const frame = await gatewayWsManager.send('sessions.list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false }, 10);
         const payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
         const sessions = normalizeSessionItems(
           payload,
@@ -982,7 +982,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       }
     }
 
-    const listSessionsResult = await gatewayInvoke('sessions_list', {});
+    const listSessionsResult = await gatewayInvoke('sessions_list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false });
     const payload = unwrapToolResult(listSessionsResult);
     const sessions = normalizeSessionItems(
       payload,
