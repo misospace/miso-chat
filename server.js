@@ -54,6 +54,12 @@ const APP_VERSION = (() => {
 
   return 'unknown';
 })();
+const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
+const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
+const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || process.env.DEFAULT_SESSION_KEY || 'default';
+const PUSH_NOTIFICATIONS_ENABLED = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
+const PUSH_VAPID_PUBLIC_KEY = String(process.env.PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || '').trim();
+const PUSH_CONFIG_READY = Boolean(PUSH_VAPID_PUBLIC_KEY && (process.env.PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY) && (process.env.PUSH_VAPID_SUBJECT || process.env.PUSH_SUBJECT));
 
 const LINK_PREVIEW_TIMEOUT_MS = (() => {
   const parsed = Number(process.env.LINK_PREVIEW_TIMEOUT_MS || 5000);
@@ -769,6 +775,29 @@ gatewayWsManager.on('error', (err) => {
   console.error('⚠️ Gateway WS error:', err?.message || err);
 });
 
+async function waitForGatewayWsReady(timeoutMs = 1500) {
+  if (gatewayWsManager?.isConnected?.()) return true;
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      gatewayWsManager?.off?.('connected', onConnected);
+      gatewayWsManager?.off?.('error', onError);
+      resolve();
+    };
+    const onConnected = () => done();
+    const onError = () => done();
+    const timer = setTimeout(done, Math.max(50, timeoutMs));
+    gatewayWsManager?.once?.('connected', onConnected);
+    gatewayWsManager?.once?.('error', onError);
+  });
+
+  return gatewayWsManager?.isConnected?.() || false;
+}
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -830,7 +859,7 @@ function normalizeSessionItems(...sources) {
 
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
-    if (gatewayWsManager?.isConnected?.()) {
+    if (await waitForGatewayWsReady()) {
       try {
         const frame = await gatewayWsManager.send('sessions.list', {}, 10);
         const payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
@@ -884,8 +913,22 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: 'session key is required' });
     }
 
-    const historyResult = await gatewayInvoke('sessions_history', { sessionKey });
-    const payload = unwrapToolResult(historyResult);
+    let payload = null;
+    let historyResult = null;
+
+    if (await waitForGatewayWsReady()) {
+      try {
+        const frame = await gatewayWsManager.send('sessions.history', { sessionKey }, 10);
+        payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
+      } catch (wsErr) {
+        console.warn('sessions.history via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
+      }
+    }
+
+    if (!payload) {
+      historyResult = await gatewayInvoke('sessions_history', { sessionKey });
+      payload = unwrapToolResult(historyResult);
+    }
     const messages = Array.isArray(payload?.messages)
       ? payload.messages
       : Array.isArray(payload)
@@ -904,7 +947,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
 app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
   try {
     const sessionKey = String(req.params.key || '').trim();
-    const text = String(req.body?.text || '').trim();
+    const text = String(req.body?.text || req.body?.message || '').trim();
 
     if (!sessionKey) {
       return res.status(400).json({ error: 'session key is required' });
@@ -916,12 +959,74 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: `message exceeds max length (${MAX_CHAT_MESSAGE_LENGTH})` });
     }
 
-    const result = await gatewayInvoke('chat_send', { sessionKey, text });
-    const payload = unwrapToolResult(result);
-    return res.json({ ok: true, ...(payload && typeof payload === 'object' ? payload : { result: payload ?? result }) });
+    let payload = null;
+    let result = null;
+
+    if (await waitForGatewayWsReady()) {
+      try {
+        const frame = await gatewayWsManager.send('chat.send', { sessionKey, text }, 30);
+        payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
+      } catch (wsErr) {
+        console.warn('chat.send via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
+      }
+    }
+
+    if (!payload) {
+      result = await gatewayInvoke('chat_send', { sessionKey, text });
+      payload = unwrapToolResult(result);
+    }
+
+    const body = payload && typeof payload === 'object' ? payload : { result: payload ?? result };
+    return res.json({ ok: true, success: true, ...body });
   } catch (error) {
     console.error('Error sending chat message:', error.message || error);
     return res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = String(req.params.key || '').trim();
+    const text = String(req.body?.text || req.body?.message || '').trim();
+
+    if (!sessionKey) return res.status(400).json({ error: 'session key is required' });
+    if (!text) return res.status(400).json({ error: 'text is required' });
+
+    let payload = null;
+    let result = null;
+
+    if (gatewayWsManager?.isConnected?.()) {
+      try {
+        const frame = await gatewayWsManager.send('chat.send', { sessionKey, text }, 30);
+        payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
+      } catch (wsErr) {
+        console.warn('chat.send stream shim via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
+      }
+    }
+
+    if (!payload) {
+      result = await gatewayInvoke('chat_send', { sessionKey, text });
+      payload = unwrapToolResult(result);
+    }
+
+    const responseText = payload?.responseText || payload?.response?.text || payload?.response?.message || payload?.text || '';
+    const toolCalls = Array.isArray(payload?.toolCalls) ? payload.toolCalls : [];
+    const model = payload?.response?.model || payload?.model || null;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: 'message', text: responseText, toolCalls, model })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Error streaming chat message:', error.message || error);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message || 'Failed to send message' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
   }
 });
 
@@ -1174,6 +1279,45 @@ app.post('/api/messages/:messageId/reactions', isAuthenticated, (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+app.get('/api/config', (req, res) => {
+  return res.json({
+    title: APP_TITLE,
+    assistantName: CHAT_DISPLAY_NAME,
+    defaultSessionKey: DEFAULT_SESSION_KEY,
+    authMode,
+    requiresAuth: authMode !== 'none',
+    localAuthEnabled,
+    oidcEnabled,
+    oidcLabel: getOidcLabel(),
+    pushNotifications: {
+      enabled: PUSH_NOTIFICATIONS_ENABLED,
+      vapidPublicKey: PUSH_NOTIFICATIONS_ENABLED ? PUSH_VAPID_PUBLIC_KEY : '',
+    },
+  });
+});
+
+app.get('/api/events', isAuthenticated, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  res.write(`data: ${JSON.stringify({ event: 'connected', data: { ok: true }, timestamp: Date.now() })}\n\n`);
+  sseClients.add(res);
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
+function broadcastToSseClients(event, data) {
+  const payload = JSON.stringify({ event, data, timestamp: Date.now() });
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {}
+  }
+}
 
 const PORT = process.env.PORT || 3000;
 
