@@ -11,8 +11,6 @@ const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const multer = require('multer');
 require('dotenv').config();
 
 const { GatewayWsManager } = require('./lib/gateway-ws');
@@ -68,64 +66,6 @@ const LINK_PREVIEW_MAX_HTML_CHARS = (() => {
 const LINK_PREVIEW_USER_AGENT =
   process.env.LINK_PREVIEW_USER_AGENT ||
   `miso-chat-link-preview/${APP_VERSION} (+https://github.com/joryirving/miso-chat)`;
-const MAX_ATTACHMENT_BYTES = (() => {
-  const parsed = Number(process.env.MAX_ATTACHMENT_BYTES || 5 * 1024 * 1024);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5 * 1024 * 1024;
-})();
-const ALLOWED_ATTACHMENT_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-]);
-const ATTACHMENTS_DIR = path.join(__dirname, 'public', 'uploads');
-fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
-
-function sanitizeAttachmentName(name) {
-  return String(name || 'attachment')
-    .replace(/[^a-zA-Z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 120) || 'attachment';
-}
-
-function inferAttachmentExtension(originalName, mimeType) {
-  const ext = path.extname(String(originalName || '')).toLowerCase();
-  if (ext) return ext;
-
-  const fallbackByMime = {
-    'image/png': '.png',
-    'image/jpeg': '.jpg',
-    'image/gif': '.gif',
-    'image/webp': '.webp',
-  };
-  return fallbackByMime[mimeType] || '.bin';
-}
-
-const attachmentStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, ATTACHMENTS_DIR),
-  filename: (_req, file, cb) => {
-    const baseName = sanitizeAttachmentName(path.basename(file.originalname, path.extname(file.originalname)));
-    const extension = inferAttachmentExtension(file.originalname, file.mimetype);
-    const unique = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
-    cb(null, `${unique}-${baseName}${extension}`);
-  },
-});
-
-const uploadAttachment = multer({
-  storage: attachmentStorage,
-  limits: {
-    fileSize: MAX_ATTACHMENT_BYTES,
-    files: 1,
-  },
-  fileFilter: (_req, file, cb) => {
-    if (!ALLOWED_ATTACHMENT_TYPES.has(file.mimetype)) {
-      cb(new Error('Unsupported attachment type'));
-      return;
-    }
-    cb(null, true);
-  },
-});
-
 function isPrivateIPv4(hostname) {
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
   const octets = hostname.split('.').map((part) => Number(part));

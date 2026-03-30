@@ -859,52 +859,6 @@
         .input-wrapper textarea::placeholder {
             color: var(--text-secondary);
         }
-
-        .composer-attachment-preview {
-            margin-bottom: 8px;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background: var(--bg-tertiary);
-            padding: 8px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .composer-attachment-preview img {
-            width: 48px;
-            height: 48px;
-            object-fit: cover;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-        }
-
-        .composer-attachment-meta {
-            min-width: 0;
-            flex: 1;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .composer-attachment-name {
-            display: block;
-            color: var(--text-primary);
-            font-size: 13px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .composer-attachment-remove {
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--text-secondary);
-            border-radius: 8px;
-            padding: 6px 8px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
         .attachment-list {
             display: flex;
             flex-direction: column;
@@ -1402,7 +1356,6 @@
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
         const MAX_LINK_PREVIEWS_PER_MESSAGE = 3;
-        const ATTACHMENT_LINE_PREFIX = '[attachment:';
         const linkPreviewCache = new Map();
         const pendingLinkPreviewRequests = new Map();
 
