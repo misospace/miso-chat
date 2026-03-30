@@ -9,6 +9,7 @@ const LocalStrategy = require('passport-local').Strategy;
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const cors = require('cors');
 const https = require('https');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -761,14 +762,113 @@ app.get('/api/auth', (req, res) => res.json({
 
 let gatewayWsLastError = '';
 let gatewayWsLastClose = null;
+const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
+const GATEWAY_WS_CLIENT_MODE = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
+const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH || path.join(process.env.HOME || '/home/node', '.openclaw', 'identity', 'device.json');
+const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
+const REQUESTED_GATEWAY_SCOPES = ['operator.read','operator.write','operator.pairing','chat.send','sessions.send','sessions.list','sessions.history'];
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+let cachedGatewayDeviceIdentity = null;
+
+function base64UrlEncode(buffer) {
+  return Buffer.from(buffer).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function derivePublicKeyRawFromPem(publicKeyPem) {
+  const spki = crypto.createPublicKey(publicKeyPem).export({ type: 'spki', format: 'der' });
+  if (spki.length === ED25519_SPKI_PREFIX.length + 32 && spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)) {
+    return spki.subarray(ED25519_SPKI_PREFIX.length);
+  }
+  return spki;
+}
+
+function buildDeviceAuthPayload({ deviceId, clientId, clientMode, role, scopes, signedAtMs, token, nonce }) {
+  const scopesList = Array.isArray(scopes) ? scopes : [];
+  return ['v2', deviceId, clientId, clientMode, role, scopesList.join(','), String(signedAtMs), token || '', nonce].join('|');
+}
+
+function fingerprintPublicKeyPem(publicKeyPem) {
+  const raw = derivePublicKeyRawFromPem(publicKeyPem);
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+function persistGatewayDeviceIdentity(identity) {
+  try {
+    fs.mkdirSync(path.dirname(GATEWAY_DEVICE_IDENTITY_PATH), { recursive: true });
+    fs.writeFileSync(GATEWAY_DEVICE_IDENTITY_PATH, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });
+    try { fs.chmodSync(GATEWAY_DEVICE_IDENTITY_PATH, 0o600); } catch {}
+  } catch {}
+}
+
+function ensureGatewayDeviceIdentity() {
+  if (cachedGatewayDeviceIdentity !== null) return cachedGatewayDeviceIdentity;
+
+  try {
+    if (fs.existsSync(GATEWAY_DEVICE_IDENTITY_PATH)) {
+      const raw = fs.readFileSync(GATEWAY_DEVICE_IDENTITY_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed?.deviceId && parsed?.publicKeyPem && parsed?.privateKeyPem) {
+        const derivedDeviceId = fingerprintPublicKeyPem(parsed.publicKeyPem);
+        const publicKey = base64UrlEncode(derivePublicKeyRawFromPem(parsed.publicKeyPem));
+        const deviceId = typeof derivedDeviceId === 'string' && derivedDeviceId ? derivedDeviceId : parsed.deviceId;
+        if (deviceId !== parsed.deviceId) {
+          persistGatewayDeviceIdentity({
+            ...parsed,
+            version: parsed?.version === 1 ? parsed.version : 1,
+            deviceId,
+            createdAtMs: typeof parsed?.createdAtMs === 'number' ? parsed.createdAtMs : Date.now(),
+          });
+        }
+        cachedGatewayDeviceIdentity = { deviceId, publicKey, privateKeyPem: parsed.privateKeyPem };
+        return cachedGatewayDeviceIdentity;
+      }
+    }
+  } catch {}
+
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const deviceId = fingerprintPublicKeyPem(publicKeyPem);
+  const identity = { version: 1, deviceId, publicKeyPem, privateKeyPem, createdAtMs: Date.now() };
+  persistGatewayDeviceIdentity(identity);
+  cachedGatewayDeviceIdentity = { deviceId, publicKey: base64UrlEncode(derivePublicKeyRawFromPem(publicKeyPem)), privateKeyPem };
+  return cachedGatewayDeviceIdentity;
+}
+
+function buildGatewayDeviceAuth({ nonce, scopes }) {
+  const identity = ensureGatewayDeviceIdentity();
+  if (!identity || !nonce) return null;
+  const signedAt = Date.now();
+  const payload = buildDeviceAuthPayload({
+    deviceId: identity.deviceId,
+    clientId: GATEWAY_WS_CLIENT_ID,
+    clientMode: GATEWAY_WS_CLIENT_MODE,
+    role: 'operator',
+    scopes,
+    signedAtMs: signedAt,
+    token: GATEWAY_TOKEN,
+    nonce,
+  });
+  const signature = base64UrlEncode(crypto.sign(null, Buffer.from(payload, 'utf8'), crypto.createPrivateKey(identity.privateKeyPem)));
+  return { id: identity.deviceId, publicKey: identity.publicKey, signature, signedAt, nonce };
+}
 const gatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN || 'http://localhost:3000';
 const GATEWAY_URL = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || 'http://openclaw.llm.svc.cluster.local:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.GATEWAY_AUTH_TOKEN || '';
 const gatewayWsManager = new GatewayWsManager({
   wsUrl: process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789',
-  clientId: process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui',
+  clientId: GATEWAY_WS_CLIENT_ID,
   clientVersion: `miso-chat/${APP_VERSION}`,
-  clientMode: process.env.GATEWAY_WS_CLIENT_MODE || 'webchat',
+  clientMode: GATEWAY_WS_CLIENT_MODE,
+  token: GATEWAY_TOKEN,
+  role: 'operator',
+  scopes: REQUESTED_GATEWAY_SCOPES,
+  waitChallengeMs: GATEWAY_WS_WAIT_CHALLENGE_MS,
+  buildDeviceAuth: ({ nonce, scopes }) => buildGatewayDeviceAuth({ nonce, scopes }),
+  headers: {
+    ...(GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {}),
+    ...(gatewayWsOrigin ? { Origin: gatewayWsOrigin } : {}),
+  },
 });
 gatewayWsManager.on('error', (err) => {
   gatewayWsLastError = String(err?.message || err || 'unknown error');
@@ -1385,9 +1485,9 @@ async function startServer() {
   const gatewayHttpUrl = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || '(not set)';
   const gatewayWsUrl = process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
   const gatewayWsOriginLabel = process.env.GATEWAY_WS_ORIGIN || '(none)';
-  const gatewayWsClientId = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
-  const gatewayWsClientMode = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
-  const gatewayDeviceIdentityPath = process.env.GATEWAY_DEVICE_IDENTITY_PATH || '';
+  const gatewayWsClientId = GATEWAY_WS_CLIENT_ID;
+  const gatewayWsClientMode = GATEWAY_WS_CLIENT_MODE;
+  const gatewayDeviceIdentityPath = GATEWAY_DEVICE_IDENTITY_PATH;
   const defaultSessionKey = DEFAULT_SESSION_KEY;
   const pushNotificationsEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
   const pushConfigReady = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.PUSH_SUBJECT;
