@@ -938,10 +938,12 @@ function normalizeSessionItems(...sources) {
 
       if (!sessionKey) return null;
 
+      const title = String(item?.title || item?.name || '').trim();
+      const agentName = String(item?.agentName || item?.agent?.name || '').trim();
       const displayName = String(
         item?.displayName
-        || item?.title
-        || item?.name
+        || agentName
+        || title
         || inferAgentNameFromKey(sessionKey)
         || sessionKey
       ).trim();
@@ -949,6 +951,8 @@ function normalizeSessionItems(...sources) {
       return {
         ...item,
         sessionKey,
+        title,
+        agentName,
         displayName,
         provider: item?.provider || 'openclaw',
       };

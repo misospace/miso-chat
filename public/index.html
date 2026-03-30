@@ -3725,7 +3725,7 @@
             await persistStoredSessionKey(sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
-            const sessionAssistant = configuredAssistantName || 'Assistant';
+            const sessionAssistant = selectedMeta?.agentName || selectedMeta?.title || selectedMeta?.name || selectedMeta?.displayName || configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             clearQueueRetryTimer(true);
