@@ -56,7 +56,7 @@ const APP_VERSION = (() => {
 })();
 const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
 const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
-const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || process.env.DEFAULT_SESSION_KEY || 'default';
+const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || process.env.DEFAULT_SESSION_KEY || 'agent:main:main';
 const PUSH_NOTIFICATIONS_ENABLED = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
 const PUSH_VAPID_PUBLIC_KEY = String(process.env.PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || '').trim();
 const PUSH_CONFIG_READY = Boolean(PUSH_VAPID_PUBLIC_KEY && (process.env.PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY) && (process.env.PUSH_VAPID_SUBJECT || process.env.PUSH_SUBJECT));
@@ -768,7 +768,7 @@ const gatewayWsManager = new GatewayWsManager({
   wsUrl: process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789',
   clientId: process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui',
   clientVersion: `miso-chat/${APP_VERSION}`,
-  clientMode: 'ui',
+  clientMode: process.env.GATEWAY_WS_CLIENT_MODE || 'webchat',
 });
 gatewayWsManager.on('error', (err) => {
   gatewayWsLastError = String(err?.message || err || 'unknown error');
@@ -893,8 +893,8 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
     if (process.env.NODE_ENV === 'development') {
       return res.json({
         sessions: [{
-          sessionKey: process.env.DEFAULT_SESSION_KEY || 'default',
-          displayName: inferAgentNameFromKey(process.env.DEFAULT_SESSION_KEY || 'default') || (process.env.DEFAULT_SESSION_KEY || 'default'),
+          sessionKey: DEFAULT_SESSION_KEY,
+          displayName: inferAgentNameFromKey(DEFAULT_SESSION_KEY) || DEFAULT_SESSION_KEY,
           provider: 'openclaw',
           fallback: true,
         }],
@@ -1384,9 +1384,9 @@ server.listen(PORT, async () => {
   const gatewayWsUrl = process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
   const gatewayWsOriginLabel = process.env.GATEWAY_WS_ORIGIN || '(none)';
   const gatewayWsClientId = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
-  const gatewayWsClientMode = 'ui';
+  const gatewayWsClientMode = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
   const gatewayDeviceIdentityPath = process.env.GATEWAY_DEVICE_IDENTITY_PATH || '';
-  const defaultSessionKey = process.env.DEFAULT_SESSION_KEY || 'default';
+  const defaultSessionKey = DEFAULT_SESSION_KEY;
   const pushNotificationsEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
   const pushConfigReady = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.PUSH_SUBJECT;
 
