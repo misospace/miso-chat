@@ -3429,7 +3429,7 @@
                 });
             }
 
-            const shouldShowReactions = sender !== 'system';
+            const shouldShowReactions = false;
             if (shouldShowReactions) {
                 const key = reactionKey(sender, hasText ? text : (hasToolCalls ? 'toolCalls:' + toolCalls.length : ''), options.reactionKeyHint || options.messageId || '');
                 const row = document.createElement('div');
@@ -3725,7 +3725,7 @@
             await persistStoredSessionKey(sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
-            const sessionAssistant = selectedMeta?.agentName || selectedMeta?.displayName || configuredAssistantName || 'Assistant';
+            const sessionAssistant = configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             clearQueueRetryTimer(true);

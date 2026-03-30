@@ -1029,13 +1029,50 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
       historyResult = await gatewayInvoke('sessions_history', { sessionKey });
       payload = unwrapToolResult(historyResult);
     }
-    const messages = Array.isArray(payload?.messages)
+    const messages = (Array.isArray(payload?.messages)
       ? payload.messages
       : Array.isArray(payload)
         ? payload
         : Array.isArray(historyResult?.messages)
           ? historyResult.messages
-          : [];
+          : []).map((msg) => {
+            const role = String(msg?.role || msg?.sender || 'assistant').toLowerCase();
+            const content = typeof msg?.content === 'string'
+              ? msg.content
+              : typeof msg?.text === 'string'
+                ? msg.text
+                : typeof msg?.message === 'string'
+                  ? msg.message
+                  : Array.isArray(msg?.content)
+                    ? msg.content
+                        .map((part) => {
+                          if (typeof part === 'string') return part;
+                          if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
+                          if (typeof part?.text === 'string') return part.text;
+                          return '';
+                        })
+                        .filter(Boolean)
+                        .join('\n')
+                    : Array.isArray(msg?.parts)
+                      ? msg.parts
+                          .map((part) => {
+                            if (typeof part === 'string') return part;
+                            if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
+                            if (typeof part?.text === 'string') return part.text;
+                            return '';
+                          })
+                          .filter(Boolean)
+                          .join('\n')
+                      : '';
+            return {
+              ...msg,
+              role,
+              content,
+              timestamp: msg?.timestamp || msg?.createdAt || msg?.time || null,
+              model: msg?.model || msg?.response?.model || null,
+              toolCalls: Array.isArray(msg?.toolCalls) ? msg.toolCalls : [],
+            };
+          });
 
     return res.json({ sessionKey, messages });
   } catch (error) {
