@@ -1119,6 +1119,7 @@
                 <span id="statusText">Connecting to OpenClaw gateway…</span>
             </div>
             <div class="version-info" id="versionInfo">v0.0.0</div>
+            <button class="icon-btn" id="manualUpdateBtn" title="Check for OTA update" aria-label="Check for OTA update" style="display:none">⬇</button>
         </div>
         <div class="header-controls">
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
@@ -4572,6 +4573,36 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
             // Initialize OTA update manager
             if (typeof MobileUpdateManager !== 'undefined') {
                 await MobileUpdateManager.init({ autoCheck: true, showNotification: true });
+
+                const manualUpdateBtn = document.getElementById('manualUpdateBtn');
+                if (manualUpdateBtn && isNativeCapacitor()) {
+                    manualUpdateBtn.style.display = 'inline-flex';
+                    manualUpdateBtn.addEventListener('click', async () => {
+                        const original = manualUpdateBtn.textContent;
+                        manualUpdateBtn.disabled = true;
+                        manualUpdateBtn.textContent = '…';
+                        try {
+                            const result = await MobileUpdateManager.checkForUpdate();
+                            if (result?.available) {
+                                const applied = await MobileUpdateManager.update();
+                                if (applied?.success) {
+                                    window.alert(`Update applied: ${result.info?.version || 'new version'}. Restart app if needed.`);
+                                } else {
+                                    window.alert(`Update failed: ${applied?.reason || 'unknown error'}`);
+                                }
+                            } else if (result?.reason === 'already-latest') {
+                                window.alert('Already on latest version.');
+                            } else {
+                                window.alert(`No update applied${result?.reason ? `: ${result.reason}` : '.'}`);
+                            }
+                        } catch (error) {
+                            window.alert(`Update check failed: ${error?.message || error}`);
+                        } finally {
+                            manualUpdateBtn.disabled = false;
+                            manualUpdateBtn.textContent = original;
+                        }
+                    });
+                }
             }
             if (!consumedFromLaunchUrl) {
                 await consumeMobileAuthTokenFromUrl();
