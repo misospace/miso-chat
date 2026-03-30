@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "lint": "node --check server.js",
-    "test": "node --check server.js && node --test tests/security.test.js tests/mobile-auth-regression.test.js tests/reaction-events.test.js",
+    "test": "node --check server.js && node --test tests/security.test.js tests/mobile-auth-regression.test.js tests/reaction-events.test.js tests/regression-contracts.test.js",
     "test:ci": "npm run test && echo '{}' > test-results.json",
     "release:readiness": "./scripts/release-readiness-check.sh",
     "smoke:deploy": "./scripts/post-deploy-smoke.sh",

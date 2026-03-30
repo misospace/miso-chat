@@ -1379,7 +1379,9 @@ const initGatewayWsManager = async () => {
 };
 
 // Start server and initialize WS manager
-server.listen(PORT, async () => {
+async function startServer() {
+  return new Promise((resolve, reject) => {
+    server.listen(PORT, async () => {
   const gatewayHttpUrl = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || '(not set)';
   const gatewayWsUrl = process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
   const gatewayWsOriginLabel = process.env.GATEWAY_WS_ORIGIN || '(none)';
@@ -1410,5 +1412,18 @@ server.listen(PORT, async () => {
    - GET  /api/sessions/:key/history
    - POST /api/sessions/:key/send
   `);
-  await initGatewayWsManager();
-});
+      await initGatewayWsManager();
+      resolve(server);
+    });
+    server.on('error', reject);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, server, startServer };

@@ -54,10 +54,16 @@ test('GET /api/sessions returns development fallback session with baseline defau
   });
 });
 
-test('GET /api/events requires auth and does not silently 404', async () => {
+test('GET /api/events exists and returns SSE headers/initial chunk instead of silently 404ing', async () => {
   await withServer(async (base) => {
-    const res = await fetch(`${base}/api/events`);
-    assert.equal(res.status, 401);
+    const res = await fetch(`${base}/api/events`, { signal: AbortSignal.timeout(5000) });
+    assert.equal(res.status, 200);
+    assert.match(String(res.headers.get('content-type') || ''), /text\/event-stream/i);
+    const reader = res.body.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value || new Uint8Array());
+    assert.match(text, /connected/);
+    await reader.cancel();
   });
 });
 
