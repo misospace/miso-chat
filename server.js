@@ -766,7 +766,7 @@ const GATEWAY_URL = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || '
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.GATEWAY_AUTH_TOKEN || '';
 const gatewayWsManager = new GatewayWsManager({
   wsUrl: process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789',
-  clientId: 'miso-chat',
+  clientId: process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui',
   clientVersion: `miso-chat/${APP_VERSION}`,
   clientMode: 'ui',
 });
@@ -1383,7 +1383,7 @@ server.listen(PORT, async () => {
   const gatewayHttpUrl = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || '(not set)';
   const gatewayWsUrl = process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
   const gatewayWsOriginLabel = process.env.GATEWAY_WS_ORIGIN || '(none)';
-  const gatewayWsClientId = 'miso-chat';
+  const gatewayWsClientId = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
   const gatewayWsClientMode = 'ui';
   const gatewayDeviceIdentityPath = process.env.GATEWAY_DEVICE_IDENTITY_PATH || '';
   const defaultSessionKey = process.env.DEFAULT_SESSION_KEY || 'default';
