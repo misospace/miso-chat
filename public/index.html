@@ -2361,7 +2361,17 @@
             window.location.assign(url);
         }
 
+        let mobileAuthInFlight = false;
+        let mobileAuthSettledAt = 0;
+
         async function handleAuthRequired() {
+            if (mobileAuthInFlight) {
+                throw new Error('Authentication pending');
+            }
+            const justSettled = mobileAuthSettledAt && (Date.now() - mobileAuthSettledAt) < 4000;
+            if (justSettled) {
+                throw new Error('Authentication settling');
+            }
             await startAuthFlow();
             throw new Error('Authentication required');
         }
@@ -2487,19 +2497,27 @@
             }
 
             try {
+                mobileAuthInFlight = true;
                 await consumeMobileAuthToken(token);
+                mobileAuthSettledAt = Date.now();
                 await closeNativeBrowserIfOpen();
 
                 if (reloadOnSuccess) {
                     const current = new URL(window.location.href);
                     current.searchParams.delete('mobile_token');
                     current.searchParams.delete('backend');
-                    window.location.replace(current.toString());
+                    window.history.replaceState({}, '', current.toString());
+                    await loadConfig().catch(() => {});
+                    await loadSessions().catch(() => {});
+                    connectEventSource();
+                    await refreshBackendHealth().catch(() => {});
                 }
                 return true;
             } catch (error) {
                 await recoverFromMobileAuthCallbackFailure('auth callback token consume failed', error);
                 return true;
+            } finally {
+                mobileAuthInFlight = false;
             }
         }
 
@@ -2509,10 +2527,13 @@
             if (!token) return;
 
             try {
+                mobileAuthInFlight = true;
                 await consumeMobileAuthToken(token);
+                mobileAuthSettledAt = Date.now();
             } catch (error) {
                 await recoverFromMobileAuthCallbackFailure('url token consume failed', error);
             } finally {
+                mobileAuthInFlight = false;
                 current.searchParams.delete('mobile_token');
                 window.history.replaceState({}, '', current.toString());
             }
@@ -3487,7 +3508,7 @@
                 }
             }
 
-            if (hasToolCalls) {
+            if (hasToolCalls && false) {
                 toolCalls.forEach((tc) => {
                     contentWrap.appendChild(renderToolCallBlock(tc));
                 });
