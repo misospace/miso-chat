@@ -2491,7 +2491,10 @@
                 await closeNativeBrowserIfOpen();
 
                 if (reloadOnSuccess) {
-                    window.location.reload();
+                    const current = new URL(window.location.href);
+                    current.searchParams.delete('mobile_token');
+                    current.searchParams.delete('backend');
+                    window.location.replace(current.toString());
                 }
                 return true;
             } catch (error) {
@@ -3071,10 +3074,17 @@
             return match?.[1] || null;
         }
 
+        function titleCaseAgentLabel(value) {
+            return String(value || '')
+                .split(/([\s_-]+)/)
+                .map((part) => (/^[\s_-]+$/.test(part) ? part : (part ? part.charAt(0).toUpperCase() + part.slice(1) : part)))
+                .join('');
+        }
+
         function getSessionAgentGroupLabel(session) {
             const agentId = session?.assistantAgentId || session?.agentId || extractAgentIdFromSessionKey(session?.sessionKey);
             if (!agentId) return null;
-            return agentDirectoryById.get(agentId) || agentId;
+            return titleCaseAgentLabel(agentDirectoryById.get(agentId) || agentId);
         }
 
         function getSessionOptionLabel(session) {
@@ -3448,18 +3458,21 @@
             const toolCalls = options.toolCalls || (typeof content === 'object' && content !== null ? content.toolCalls : null) || [];
             const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
             const hasText = String(text || '').trim().length > 0;
+            const hideRawToolOutput = sender === 'miso' && hasToolCalls;
+            const visibleText = hideRawToolOutput ? '' : text;
+            const hasVisibleText = String(visibleText || '').trim().length > 0;
 
-            if (sender === 'system' && hasText) {
-                const reactionEvent = parseGatewayReactionEvent(text);
+            if (sender === 'system' && hasVisibleText) {
+                const reactionEvent = parseGatewayReactionEvent(visibleText);
                 if (reactionEvent && applyGatewayReactionEvent(reactionEvent)) {
                     return;
                 }
             }
 
-            if (hasText || (sender === 'miso' && hasToolCalls)) {
+            if (hasVisibleText || (sender === 'miso' && hasToolCalls)) {
                 const bubble = document.createElement('div');
                 bubble.className = 'bubble';
-                renderBubbleContent(bubble, hasText ? text : 'Used tools.');
+                renderBubbleContent(bubble, hasVisibleText ? visibleText : 'Used tools.');
                 bubble.addEventListener('click', (event) => {
                     const btn = event.target.closest('.copy-code-btn');
                     if (!btn) return;
@@ -3469,8 +3482,8 @@
                 });
                 contentWrap.appendChild(bubble);
 
-                if (hasText && sender !== 'system') {
-                    void appendLinkPreviews(contentWrap, text);
+                if (hasVisibleText && sender !== 'system') {
+                    void appendLinkPreviews(contentWrap, visibleText);
                 }
             }
 
@@ -3482,7 +3495,7 @@
 
             const shouldShowReactions = false;
             if (shouldShowReactions) {
-                const key = reactionKey(sender, hasText ? text : (hasToolCalls ? 'toolCalls:' + toolCalls.length : ''), options.reactionKeyHint || options.messageId || '');
+                const key = reactionKey(sender, hasVisibleText ? visibleText : (hasToolCalls ? 'toolCalls:' + toolCalls.length : ''), options.reactionKeyHint || options.messageId || '');
                 const row = document.createElement('div');
                 row.className = 'reaction-row';
 
