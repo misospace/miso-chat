@@ -97,6 +97,11 @@
     checkForUpdate: async function() {
       if (!this.isNativePlatform()) return { available: false, reason: 'not-native' };
 
+      const updater = getUpdater();
+      if (!updater || typeof updater.download !== 'function' || typeof updater.set !== 'function') {
+        return { available: false, reason: 'updater-unavailable' };
+      }
+
       try {
         this.currentBundle = await this.getCurrentBundle();
         const currentVersion = this.currentBundle?.version || this.currentBundle?.id || '0.0.0';
@@ -218,6 +223,10 @@
       }
 
       const updater = getUpdater();
+      if (!updater) {
+        this.log('Updater plugin unavailable; skipping updater init');
+        return;
+      }
       if (updater?.notifyAppReady) {
         try {
           await updater.notifyAppReady();
