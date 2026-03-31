@@ -3071,13 +3071,6 @@
             return match?.[1] || null;
         }
 
-        async function loadAssistantIdentity(sessionKey) {
-            const response = await apiFetch(`/api/assistant-identity?sessionKey=${encodeURIComponent(sessionKey)}`);
-            if (!response.ok) return null;
-            const data = await response.json();
-            return data?.assistantName ? data : null;
-        }
-
         function getSessionAgentGroupLabel(session) {
             const agentId = session?.assistantAgentId || session?.agentId || extractAgentIdFromSessionKey(session?.sessionKey);
             if (!agentId) return null;
@@ -3801,8 +3794,7 @@
             await persistStoredSessionKey(sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
-            const identity = await loadAssistantIdentity(sessionKey).catch(() => null);
-            const sessionAssistant = identity?.assistantName || configuredAssistantName || 'Assistant';
+            const sessionAssistant = getSessionAgentGroupLabel(selectedMeta) || configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             clearQueueRetryTimer(true);
