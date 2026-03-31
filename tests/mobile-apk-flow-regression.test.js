@@ -45,3 +45,14 @@ test('mobile updater fails explicitly when updater plugin is unavailable', () =>
   assert.match(updateManager, /return \{ available: false, reason: 'updater-unavailable' \};/);
   assert.match(updateManager, /Updater plugin unavailable; skipping updater init/);
 });
+
+
+test('native build marker exposes backend and OTA plugin state in-app', () => {
+  const indexHtml = read(indexHtmlPath);
+
+  assert.match(indexHtml, /id="nativeBuildMarker"/);
+  assert.match(indexHtml, /native shell • backend/);
+  assert.match(indexHtml, /ota-plugin:yes/);
+  assert.match(indexHtml, /ota-plugin:no/);
+  assert.match(indexHtml, /updateNativeBuildMarker\(\);/);
+});
