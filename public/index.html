@@ -2491,7 +2491,10 @@
                 await closeNativeBrowserIfOpen();
 
                 if (reloadOnSuccess) {
-                    window.location.reload();
+                    const current = new URL(window.location.href);
+                    current.searchParams.delete('mobile_token');
+                    current.searchParams.delete('backend');
+                    window.location.replace(current.toString());
                 }
                 return true;
             } catch (error) {
@@ -3071,10 +3074,17 @@
             return match?.[1] || null;
         }
 
+        function titleCaseAgentLabel(value) {
+            return String(value || '')
+                .split(/([\s_-]+)/)
+                .map((part) => (/^[\s_-]+$/.test(part) ? part : (part ? part.charAt(0).toUpperCase() + part.slice(1) : part)))
+                .join('');
+        }
+
         function getSessionAgentGroupLabel(session) {
             const agentId = session?.assistantAgentId || session?.agentId || extractAgentIdFromSessionKey(session?.sessionKey);
             if (!agentId) return null;
-            return agentDirectoryById.get(agentId) || agentId;
+            return titleCaseAgentLabel(agentDirectoryById.get(agentId) || agentId);
         }
 
         function getSessionOptionLabel(session) {
