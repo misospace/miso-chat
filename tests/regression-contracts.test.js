@@ -156,3 +156,58 @@ test('POST /api/sessions/:key/send-stream emits sanitized assistant text instead
     GatewayWsManager.prototype.send = originalSend;
   }
 });
+
+test('GET /api/sessions/:key/history strips raw tool_result from stored assistant messages', async () => {
+  const originalIsConnected = GatewayWsManager.prototype.isConnected;
+  const originalSend = GatewayWsManager.prototype.send;
+
+  GatewayWsManager.prototype.isConnected = () => true;
+  GatewayWsManager.prototype.send = async (action) => {
+    if (action === 'chat.history') {
+      return {
+        result: {
+          messages: [
+            {
+              role: 'user',
+              content: 'run a tool please',
+              timestamp: '2026-04-03T10:00:00Z',
+            },
+            {
+              role: 'assistant',
+              content: [
+                { type: 'tool_result', content: 'raw internal tool output should not appear' },
+                { type: 'text', text: 'Here is the final answer to the user' },
+              ],
+              responseText: 'raw tool_result: internal plumbing should be hidden',
+              timestamp: '2026-04-03T10:00:01Z',
+            },
+          ],
+        },
+      };
+    }
+    return {};
+  };
+
+  try {
+    await withServer(async (base) => {
+      const { res, body } = await fetchJson(base, '/api/sessions/default/history');
+      assert.equal(res.status, 200);
+      assert.ok(Array.isArray(body?.messages));
+
+      const assistantMsg = body.messages.find((m) => m.role === 'assistant');
+      assert.ok(assistantMsg, 'assistant message should be present');
+
+      // Content must be the cleaned final text, not the raw tool_result responseText
+      assert.equal(assistantMsg.content, 'Here is the final answer to the user');
+      assert.equal(String(assistantMsg.content).includes('tool_result'), false);
+      assert.equal(String(assistantMsg.content).includes('internal plumbing'), false);
+
+      // toolCalls must be stripped from history regardless
+      assert.ok(Array.isArray(assistantMsg.toolCalls));
+      assert.equal(assistantMsg.toolCalls.length, 0);
+    });
+  } finally {
+    GatewayWsManager.prototype.isConnected = originalIsConnected;
+    GatewayWsManager.prototype.send = originalSend;
+  }
+});
