@@ -20,7 +20,7 @@ jobs:
     name: Wishlist PR Review
     if: >-
       ${{
-        !github.event.pull_request.draft &&
+        github.event_name == 'pull_request' && !github.event.pull_request.draft &&
         github.event.pull_request.user.login == 'itsmiso-ai'
       }}
     runs-on: ubuntu-latest
