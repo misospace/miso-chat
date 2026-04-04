@@ -32,7 +32,7 @@ jobs:
       PR_TITLE: ${{ github.event.pull_request.title }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-      MINIMAX_BASE_URL: "https://api.minimax.chat/v1"
+      MINIMAX_BASE_URL: "https://api.minimax.io/anthropic/v1"
       MINIMAX_MODEL: "MiniMax-M2.7"
 
     steps:
