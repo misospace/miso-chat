@@ -593,6 +593,12 @@
             letter-spacing: 0.01em;
         }
 
+        .youtube-embed {
+            margin-top: 8px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
         .code-block {
             margin-top: 8px;
             border: 1px solid var(--border);
@@ -1720,6 +1726,17 @@
             container.appendChild(wrap);
 
             for (const url of urls) {
+                if (isDirectImageUrl(url)) {
+                    addImage(url);
+                    continue;
+                }
+                if (isYouTubeUrl(url)) {
+                    const videoId = extractYouTubeVideoId(url);
+                    if (videoId) {
+                        addYouTubeEmbed(videoId, url);
+                        continue;
+                    }
+                }
                 const preview = await fetchLinkPreview(url);
                 if (!preview) continue;
                 wrap.appendChild(buildLinkPreviewCard(preview));
@@ -1728,6 +1745,68 @@
             if (!wrap.childElementCount) {
                 wrap.remove();
             }
+        }
+
+        function isDirectImageUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const pathname = parsed.pathname.toLowerCase();
+                return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/.test(pathname);
+            } catch {
+                return false;
+            }
+        }
+
+        function isYouTubeUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const host = parsed.hostname.toLowerCase();
+                const pathname = parsed.pathname;
+                if (host === 'www.youtube.com' || host === 'youtube.com' || host === 'youtu.be') {
+                    return /\/watch\?|\/embed\/|\/shorts\/|youtu\.be/.test(pathname);
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        }
+
+        function extractYouTubeVideoId(url) {
+            try {
+                const parsed = new URL(url);
+                const host = parsed.hostname.toLowerCase();
+                const pathname = parsed.pathname;
+                // youtube.com/watch?v=...
+                const watchMatch = url.match(/[?&]v=([^&]+)/);
+                if (watchMatch) return watchMatch[1];
+                // youtu.be/...
+                if (host === 'youtu.be') {
+                    const m = pathname.match(/\/([A-Za-z0-9_-]{11})/);
+                    if (m) return m[1];
+                }
+                // youtube.com/embed/... or youtube.com/shorts/...
+                const embedMatch = pathname.match(/\/(?:embed|shorts)\/([A-Za-z0-9_-]{11})/);
+                if (embedMatch) return embedMatch[1];
+                return null;
+            } catch {
+                return null;
+            }
+        }
+
+        function addYouTubeEmbed(videoId, originalUrl) {
+            const div = document.createElement('div');
+            div.className = 'youtube-embed';
+            const iframe = document.createElement('iframe');
+            iframe.src = 'https://www.youtube-nocookie.com/embed/' + videoId;
+            iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+            iframe.setAttribute('allowfullscreen', '');
+            iframe.setAttribute('loading', 'lazy');
+            iframe.style.width = '100%';
+            iframe.style.aspectRatio = '16 / 9';
+            iframe.style.border = 'none';
+            iframe.style.borderRadius = '8px';
+            div.appendChild(iframe);
+            messagesDiv.appendChild(div);
         }
 
         function appendFencedCode(container, language, rawCode) {
