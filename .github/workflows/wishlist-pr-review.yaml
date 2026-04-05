@@ -5,12 +5,6 @@ on:
   pull_request:
     branches: ["main"]
     types: [opened, reopened, synchronize, ready_for_review]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'PR number to review'
-        required: true
-        type: number
 
 concurrency:
   group: wishlist-pr-review
@@ -23,129 +17,311 @@ permissions:
 jobs:
   review-wishlist-pr:
     name: Wishlist PR Review
+    if: >-
+      ${{
+        !github.event.pull_request.draft &&
+        github.event.pull_request.user.login == 'itsmiso-ai'
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+      MINIMAX_BASE_URL: "https://api.minimax.io/anthropic/v1"
+      MINIMAX_MODEL: "MiniMax-M2.7"
+      BOT_APP_ID: ${{ secrets.MISO_BOT_APP_ID }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.MISO_BOT_PRIVATE_KEY }}
+
     steps:
-      - name: PR context
-        id: pr-context
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            echo "PR_NUM=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-            echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            echo "PR_AUTHOR=${{ github.event.pull_request.user.login }}" >> "$GITHUB_OUTPUT"
-            echo "IS_DRAFT=${{ github.event.pull_request.draft }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "PR_NUM=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
-            echo "IS_DRAFT=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Validate author
-        if: github.event_name == 'pull_request'
-        run: |
-          if [ "${{ steps.pr-context.outputs.PR_AUTHOR }}" != "itsmiso-ai" ]; then
-            echo "NOT_ME=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Skip non-itsmiso-ai or draft
-        if: steps.pr-context.outputs.NOT_ME == 'true' || steps.pr-context.outputs.IS_DRAFT == 'true'
-        run: |
-          echo "Skipping: author=${{ steps.pr-context.outputs.PR_AUTHOR }}, draft=${{ steps.pr-context.outputs.IS_DRAFT }}"
-
       - name: Checkout
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ steps.pr-context.outputs.HEAD_SHA || github.event.inputs.pr_number }}
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Validate secrets
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
+      - name: Validate MINIMAX_API_KEY
         run: |
           set -euo pipefail
-          echo "MINIMAX_API_KEY set: ${#MINIMAX_API_KEY} chars"
-          echo "MISO_BOT_APP_ID set: ${#MISO_BOT_APP_ID} chars"
-          echo "MISO_BOT_PRIVATE_KEY set: ${#MISO_BOT_PRIVATE_KEY} chars"
+          : "${MINIMAX_API_KEY:?Missing secret MINIMAX_API_KEY — add it in repo settings -> secrets}"
+
+      - name: Validate bot secrets
+        run: |
+          set -euo pipefail
+          : "${BOT_APP_ID:?Missing secret MISO_BOT_APP_ID — add it in repo settings -> secrets}"
+          : "${BOT_APP_PRIVATE_KEY:?Missing secret MISO_BOT_PRIVATE_KEY — add it in repo settings -> secrets}"
 
       - name: Generate bot token
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
         id: app-token
         uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
-          app-id: ${{ env.MISO_BOT_APP_ID }}
-          private-key: ${{ env.MISO_BOT_PRIVATE_KEY }}
+          app-id: ${{ env.BOT_APP_ID }}
+          private-key: ${{ env.BOT_APP_PRIVATE_KEY }}
 
-      - name: Set GH_TOKEN
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
+      - name: Prefer bot token for GitHub API
         run: |
+          set -euo pipefail
           echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> "$GITHUB_ENV"
 
-      - name: Get PR data
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
+      - name: Validate runtime dependencies
         run: |
           set -euo pipefail
-          PR_NUM="${{ steps.pr-context.outputs.PR_NUM }}"
-          gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" --json number,title,body,headRefOid,author,url > pr.json
-          gh pr diff "$PR_NUM" --repo "$GITHUB_REPOSITORY" > pr.diff
-          head -c 100000 pr.diff > pr.diff.truncated
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUM/files" --paginate > pr-files.raw.json
+          command -v gh >/dev/null
+          command -v jq >/dev/null
 
-      - name: Gather linked issues
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
+      - name: Collect PR context
         run: |
           set -euo pipefail
-          : > linked-issues.md
-          BODY=$(jq -r '.body // ""' pr.json)
-          echo "$BODY" | grep -oE '#[0-9]+' | sort -u | head -5 > nums.txt || true
-          while IFS= read -r ref; do
-            [ -z "$ref" ] && continue
-            num="${ref#\#}"
-            echo "## #$num" >> linked-issues.md
-            if gh issue view "$num" --repo "$GITHUB_REPOSITORY" --json number,title,body,state > issue.json 2>/dev/null; then
-              echo "**$(jq -r '.title' issue.json)** (State: $(jq -r '.state' issue.json))" >> linked-issues.md
-              jq -r '.body // ""' issue.json | head -c 1500 >> linked-issues.md
-            fi
-          done < nums.txt
-          [ ! -s linked-issues.md ] && echo "(No linked issues)" > linked-issues.md
+
+          gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json number,title,body,headRefOid,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url,labels \
+            > pr.json
+
+          gh pr diff "$PR_NUMBER" --repo "$REPO" > pr.diff
+          head -c 100000 pr.diff > pr.diff.truncated
+
+          gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate > pr-files.raw.json
+          jq '[.[] | {filename,status,additions,deletions,changes,patch}]' pr-files.raw.json > pr-files.json
+          head -c 60000 pr-files.json > pr-files.truncated.json
+
+          jq -r '.body // ""' pr.json | grep -oE '#[0-9]+' | head -5 > linked-issues.txt || true
+
+          jq -r '[.[] | .filename | split(".") | last]' pr-files.raw.json \
+            | sort | uniq -c | sort -rn > file-types.txt || true
 
       - name: Check skip criteria
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
         id: skip-check
         run: |
           set -euo pipefail
-          NONLOCK=$(jq '[.[] | select(.filename | test("\\.(lock|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$") | not)] | length' pr-files.raw.json)
-          echo "Non-lock files: $NONLOCK"
-          if [ "$NONLOCK" -eq 0 ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          FILETYPES=$(cat file-types.txt 2>/dev/null || true)
+          if echo "$FILETYPES" | grep -qvE '^( *[0-9]+ (js|ts|mjs|cjs|jsx|tsx|json|md|yml|yaml|toml))$'; then
+            echo "skip_review=false" >> "$GITHUB_OUTPUT"
+            echo "reason=all-javascript" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Build corpus
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true' && steps.skip-check.outputs.skip != 'true'
+          CHANGED=$(jq '[.[] | select(.filename | test("\\.(lock|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$") | not)] | length' pr-files.raw.json)
+          if [ "$CHANGED" -eq 0 ]; then
+            echo "skip_review=true" >> "$GITHUB_OUTPUT"
+            echo "reason=only-lockfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_review=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gather linked issue context
+        if: steps.skip-check.outputs.skip_review != 'true'
         run: |
           set -euo pipefail
-          export PR_NUM="${{ steps.pr-context.outputs.PR_NUM }}"
-          python3 .github/workflows/build_corpus.py
+
+          : > linked-issues.md
+
+          while IFS= read -r issue_ref; do
+            [ -z "$issue_ref" ] && continue
+            echo "$issue_ref" | grep -qE '^#[0-9]+$' || continue
+            num="${issue_ref#\#}"
+
+            echo "## Linked Issue: #$num" >> linked-issues.md
+            echo >> linked-issues.md
+
+            if gh issue view "$num" --repo "$REPO" --json number,title,body,state,labels > issue.json 2>/dev/null; then
+              echo "**Title:** $(jq -r '.title' issue.json)" >> linked-issues.md
+              echo "**State:** $(jq -r '.state' issue.json)" >> linked-issues.md
+              echo "**Labels:** $(jq -r '[.labels[].name] | join(", ")' issue.json)" >> linked-issues.md
+              echo >> linked-issues.md
+              echo "**Body:**" >> linked-issues.md
+              jq -r '.body // "(no body)"' issue.json | head -c 3000 >> linked-issues.md
+              echo >> linked-issues.md
+            else
+              echo "(Could not fetch issue #$num)" >> linked-issues.md
+            fi
+            echo >> linked-issues.md
+          done < linked-issues.txt
+
+          if [ ! -s linked-issues.md ]; then
+            echo "(No issue references found in PR body)" > linked-issues.md
+          fi
+
+      - name: Gather repo standards (CLAUDE.md)
+        if: steps.skip-check.outputs.skip_review != 'true'
+        run: |
+          set -euo pipefail
+
+          : > clude-standards.md
+          if [ -f CLAUDE.md ]; then
+            echo "# Repository Standards" >> clude-standards.md
+            cat CLAUDE.md >> clude-standards.md
+          else
+            echo "(CLAUDE.md not found)" >> clude-standards.md
+          fi
+
+      - name: Build review corpus
+        if: steps.skip-check.outputs.skip_review != 'true'
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# PR Metadata"
+            jq '.' pr.json
+            echo
+            echo "# Changed Files"
+            cat file-types.txt 2>/dev/null || echo "(none)"
+            echo
+            echo "# PR Diff (truncated)"
+            echo '```diff'
+            cat pr.diff.truncated
+            echo '```'
+            echo
+            echo "# PR Files"
+            echo '```json'
+            cat pr-files.truncated.json
+            echo '```'
+            echo
+            echo "# Linked Issues"
+            cat linked-issues.md
+            echo
+            echo "# Repository Standards (CLAUDE.md)"
+            cat clude-standards.md
+          } > review-corpus.md
+
+          head -c 180000 review-corpus.md > review-corpus.truncated.md
 
       - name: Analyze with minimax
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true' && steps.skip-check.outputs.skip != 'true'
+        if: steps.skip-check.outputs.skip_review != 'true'
         id: analyze
         run: |
           set -euo pipefail
-          python3 .github/workflows/analyze.py
 
-      - name: Post review comment
-        if: steps.pr-context.outputs.NOT_ME != 'true' && steps.pr-context.outputs.IS_DRAFT != 'true'
+          SYSTEM_PROMPT="You review pull requests in a Node.js/Express chat application repository (miso-chat). The PRs are partial fixes generated by an automated wishlist cron — they may be incomplete or imperfect. Your goal is to assess whether the code change is likely to address the stated issue, not to perform a perfect code review.
+
+Review focus:
+1. Does the code change plausibly address the issue described in the linked issue/PR?
+2. Are there obvious bugs, security issues, or regressions?
+3. Does the test coverage make sense for what was changed?
+4. Does the implementation follow reasonable patterns from the existing codebase?
+5. Should this be approved as-is, or does it need changes before merging?
+
+CLAUDE.md conventions (if present) should be respected.
+
+Return STRICT JSON with exactly these keys:
+- verdict: \"approve\" | \"request_changes\" | \"comment\"
+- summary: one-sentence plain-text summary of the assessment
+- review_markdown: full human-readable markdown with: overview, what was changed and why, concerns (if any), and recommendation
+- concerns: array of {severity: \"high\"|\"medium\"|\"low\", text: string} for any specific concerns
+- confidence: \"high\"|\"medium\"|\"low\" for how confident you are in this assessment
+
+Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertain. Only \"request_changes\" for clear problems. Do not invent facts — use only the provided corpus."
+
+          jq -n \
+            --arg model "$MINIMAX_MODEL" \
+            --arg system "$SYSTEM_PROMPT" \
+            --arg user "Review this PR from the wishlist cron and return STRICT JSON." \
+            --rawfile corpus review-corpus.truncated.md \
+            '{"model":$model,"messages":[{"role":"system","content":$system},{"role":"user","content":($user + "\n\n" + $corpus)}],"temperature":0.1}' > ai-request.json
+
+          RESPONSE=$(curl -fsSL "$MINIMAX_BASE_URL/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $MINIMAX_API_KEY" \
+            --data @ai-request.json)
+
+          if [ -z "$RESPONSE" ]; then
+            echo "minimax_request_failed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$RESPONSE" > ai-response.json
+
+          jq -r '.choices[0].message.content // empty' ai-response.json > ai-output.raw 2>/dev/null || true
+
+          if [ ! -s ai-output.raw ]; then
+            echo "minimax_request_failed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sed -e 's/^```json$//' -e 's/^```$//' ai-output.raw | sed '/^$/d' > ai-output.json
+
+          if ! jq . ai-output.json > /dev/null 2>&1; then
+            echo "minimax_parse_failed=true" >> "$GITHUB_OUTPUT"
+            cat ai-output.raw >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERDICT=$(jq -r '.verdict // "comment"' ai-output.json)
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+      - name: Build review comment
+        if: steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
         run: |
           set -euo pipefail
-          export PR_NUM="${{ steps.pr-context.outputs.PR_NUM }}"
-          export SKIP="${{ steps.skip-check.outputs.skip || 'false' }}"
-          export AI_FAILED="${{ steps.analyze.outputs.ai_failed || 'true' }}"
-          export VERDICT="${{ steps.analyze.outputs.verdict || 'comment' }}"
-          python3 .github/workflows/post_comment.py
+
+          VERDICT="${{ steps.analyze.outputs.verdict }}"
+
+          if [ "$VERDICT" = "approve" ]; then
+            VERDICT_PREFIX="✅ **Automated recommendation: APPROVE**"
+          elif [ "$VERDICT" = "request_changes" ]; then
+            VERDICT_PREFIX="⚠️ **Automated recommendation: REQUEST CHANGES**"
+          else
+            VERDICT_PREFIX="💬 **Automated review: COMMENT**"
+          fi
+
+          {
+            echo "<!-- wishlist-review-bot -->"
+            echo "<!-- wishlist-review-sha:${HEAD_SHA} -->"
+            echo
+            echo "$VERDICT_PREFIX"
+            echo
+            echo "_Analysis engine: minimax-M2.7_"
+            echo
+          } > review-comment.md
+
+          if [ "${{ steps.analyze.outputs.minimax_request_failed || '' }}" = "true" ]; then
+            echo "_(AI review unavailable — could not reach minimax API or parse response)_" >> review-comment.md
+          elif [ "${{ steps.analyze.outputs.minimax_parse_failed || '' }}" = "true" ]; then
+            echo "_(AI review available but response was not valid JSON — posting raw output)_" >> review-comment.md
+            echo '```' >> review-comment.md
+            head -c 2000 ai-output.raw >> review-comment.md
+            echo '```' >> review-comment.md
+          fi
+
+          jq -r '.review_markdown // "# Review\n\n(No review content generated)"' ai-output.json >> review-comment.md 2>/dev/null || true
+
+          CONCERNS=$(jq -e '.concerns | length > 0' ai-output.json 2>/dev/null && jq -r '.concerns[] | "- **[\(.severity)]** \(.text)"' ai-output.json || true)
+          if [ -n "$CONCERNS" ]; then
+            echo >> review-comment.md
+            echo "## Concerns" >> review-comment.md
+            echo "$CONCERNS" >> review-comment.md
+          fi
+
+          echo >> review-comment.md
+          echo "_This review is automated and advisory. The final merge decision is always yours._" >> review-comment.md
+
+      - name: Post review comment
+        if: steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.analyze.outputs.minimax_request_failed || '' }}" = "true" ]; then
+            echo "Skipping comment post — minimax unavailable"
+            exit 0
+          fi
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --edit-last --create-if-none \
+            --body-file review-comment.md
 
       - name: Summary
         if: always()
         run: |
-          echo "PR #${{ steps.pr-context.outputs.PR_NUM }} — skip: ${{ steps.skip-check.outputs.skip || 'false' }}, verdict: ${{ steps.analyze.outputs.verdict || 'n/a' }}"
+          set -euo pipefail
+
+          SKIP="${{ steps.skip-check.outputs.skip_review || 'false' }}"
+          VERDICT="${{ steps.analyze.outputs.verdict || 'n/a' }}"
+
+          if [ "$SKIP" = "true" ]; then
+            echo "Review skipped: ${{ steps.skip-check.outputs.reason }}"
+          else
+            echo "Wishlist PR review complete — verdict: $VERDICT"
+          fi
