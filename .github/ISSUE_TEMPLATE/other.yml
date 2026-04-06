@@ -1,0 +1,17 @@
+name: 📝 Other
+description: For meta, docs, or issues that do not fit other categories
+title: "[scope]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Issue Description
+
+        Please describe what this issue is about.
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+    validations:
+      required: true

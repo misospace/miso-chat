@@ -1,0 +1,35 @@
+name: 🐛 Bug Report
+description: File a bug report
+title: "bug(scope): "
+labels: ["bug", "priority/p1"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Report
+
+        **Describe the bug**
+        A clear and concise description of what the bug is.
+
+        **To Reproduce**
+        Steps to reproduce the behavior:
+        1. 
+        2. 
+        3. 
+
+        **Expected behavior**
+        What you expected to happen.
+
+        **Screenshots**
+        If applicable, add screenshots to help explain your problem.
+
+        **Context**
+        - Browser / OS: 
+        - Version: 
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+    validations:
+      required: false
