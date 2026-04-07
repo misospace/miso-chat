@@ -1,7 +1,7 @@
 # Miso Chat
 
 <p align="center">
-  <img src="https://img.shields.io/docker/vize/joryirving/miso-chat?sort=semver&label=docker" alt="Docker">
+  <img src="https://img.shields.io/docker/v/ghcr.io/joryirving/miso-chat?sort=semver&label=ghcr" alt="GHCR">
   <img src="https://github.com/joryirving/miso-chat/actions/workflows/build.yaml/badge.svg" alt="Build">
   <img src="https://img.shields.io/github/v/release/joryirving/miso-chat?sort=semver" alt="Release">
   <img src="https://img.shields.io/github/license/joryirving/miso-chat" alt="License">
