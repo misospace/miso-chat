@@ -42,5 +42,3 @@ jobs:
           model_name: "MiniMax-M2.7"
           openai_compatible_api_key: ${{ secrets.MINIMAX_API_KEY }}
           openai_compatible_base_url: "https://api.minimax.io/v1"
-          blocking_only: true
-          update_pr_description: false
