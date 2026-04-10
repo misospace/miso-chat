@@ -477,7 +477,7 @@ function requestWantsJson(req) {
 }
 
 const mobileAuthHandoffs = new Map();
-const MOBILE_AUTH_TTL_MS = Number(process.env.MOBILE_AUTH_TTL_MS || 2 * 60 * 1000);
+const MOBILE_AUTH_TTL_MS = Number(process.env.MOBILE_AUTH_TTL_MS || 30 * 60 * 1000);
 
 function issueMobileAuthToken(user) {
   const token = crypto.randomBytes(24).toString('hex');
