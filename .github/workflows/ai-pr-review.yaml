@@ -42,7 +42,7 @@ jobs:
       - name: Review PR with reusable AI reviewer
         if: github.event_name == 'pull_request'
         id: review
-        uses: joryirving/pr-reviewer-action@v1
+        uses: joryirving/pr-reviewer-action@v1.0.1
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           ai_base_url: ${{ env.AI_BASE_URL }}
