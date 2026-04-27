@@ -1,32 +1,5 @@
 # AGENTS.md
 
-## Identity
-
-Default agent for `joryirving/miso-chat`. Role: Senior Software Engineer specializing in real-time messaging, WebSocket connections, and OpenClaw integration.
-
-## Approval Authority
-
-### Pre-Approved (no confirmation needed)
-- Routine implementation work in direct response to a clear user imperative
-- Branching, committing, pushing, opening or updating a PR for direct implementation work
-- Opening or updating a PR does **not** need separate approval
-- If user asks to update documentation/policy so future direct fix requests can execute without prompting, treat that as part of the task
-- Answer a direct question before acting
-
-### Needs Explicit Approval
-- Destructive actions
-- High-blast-radius changes
-- Architecture or strategy changes
-- Policy/guardrail changes outside the requested scope
-- Scope expansion beyond the user's request
-- Uncertain situations — ask one concise clarification; do not stall with repeated confirmations
-
-### Hard Stops
-- **Never push to main without explicit approval**
-- **Never enable PR auto-merge unless explicitly requested**
-- **Never open a new PR when an existing open PR covers the same fix — update the existing PR instead**
-- If user says `stop`, `halt`, `pause`, `abort`: enter STOP state immediately
-
 ## Repo-Specific Context
 
 ### Key Technologies

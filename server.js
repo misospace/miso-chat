@@ -288,6 +288,52 @@ const limiter = rateLimit({
   },
   message: { error: 'Too many requests, please try again later.' },
 });
+
+const sseLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip'];
+    if (typeof cfIp === 'string' && cfIp.trim()) {
+      return ipKeyGenerator(cfIp.trim());
+    }
+
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return ipKeyGenerator(forwarded.split(',')[0].trim());
+    }
+
+    return ipKeyGenerator(req.ip);
+  },
+  message: { error: 'Too many SSE connections, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip'];
+    if (typeof cfIp === 'string' && cfIp.trim()) {
+      return ipKeyGenerator(cfIp.trim());
+    }
+
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return ipKeyGenerator(forwarded.split(',')[0].trim());
+    }
+
+    return ipKeyGenerator(req.ip);
+  },
+  skip: (req) => {
+    // Skip for auth modes that don't use local auth
+    return !localAuthEnabled;
+  },
+  message: { error: 'Too many authentication attempts, please try again later.' },
+});
 app.use('/api/', limiter);
 
 // Middleware
@@ -569,7 +615,7 @@ app.get('/api/login-options', (req, res) => {
   });
 });
 
-app.post('/login', (req, res, next) => {
+app.post('/login', authLimiter, (req, res, next) => {
   if (!localAuthEnabled) {
     const returnTo = encodeURIComponent(getReturnTo(req, '/'));
     return res.redirect(`/login?error=local_disabled&return_to=${returnTo}`);
@@ -714,18 +760,12 @@ app.get('/auth/mobile-complete', (req, res) => {
 });
 
 app.post('/api/mobile-auth/consume', (req, res) => {
-  console.log('[MobileAuth] consume endpoint called');
-  console.log('[MobileAuth] request body:', JSON.stringify(req.body));
-  console.log('[MobileAuth] request headers:', JSON.stringify(req.headers));
-  console.log('[MobileAuth] request authenticated:', req.isAuthenticated());
-  console.log('[MobileAuth] request user:', req.user);
   const token = typeof req.body?.token === 'string' ? req.body.token : '';
   if (!token) {
     return res.status(400).json({ error: 'Missing token' });
   }
 
   const user = consumeMobileAuthToken(token);
-  console.log('[MobileAuth] token valid, user:', user);
   if (!user) {
     return res.status(400).json({ error: 'Invalid or expired token' });
   }
@@ -733,18 +773,15 @@ app.post('/api/mobile-auth/consume', (req, res) => {
   return establishLoginSession(req, user, (err) => {
     if (err) {
       console.error('Mobile auth session setup failed:', err.message || err);
-      console.log('[MobileAuth] session established');
       return res.status(500).json({ error: 'Failed to establish session' });
     }
 
     return persistLoginSession(req, (saveErr) => {
       if (saveErr) {
         console.error('Mobile auth session persist failed:', saveErr.message || saveErr);
-        console.log('[MobileAuth] session persisted');
         return res.status(500).json({ error: 'Failed to establish session' });
       }
 
-      console.log('[MobileAuth] session persisted, authenticated:', req.isAuthenticated());
       return res.json({ ok: true });
     });
   });
@@ -902,12 +939,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     version: APP_VERSION,
-    uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    gatewayWsConnected: gatewayWsManager?.isConnected?.() || false,
-    gatewayWsReconnectAttempts: gatewayWsManager?.reconnectAttempts || 0,
-    gatewayWsLastError,
-    gatewayWsLastClose,
   });
 });
 
@@ -1489,7 +1521,7 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-app.get('/api/events', isAuthenticated, (req, res) => {
+app.get('/api/events', isAuthenticated, sseLimiter, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

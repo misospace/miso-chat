@@ -43,7 +43,7 @@ test('securityHeaders sets required baseline headers including CSP', () => {
   assert.match(csp, /default-src 'self'/);
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
-  assert.match(csp, /script-src 'self' 'unsafe-inline'/);
+  assert.match(csp, /script-src 'self' 'nonce-\w+/);
   assert.match(csp, /style-src 'self' 'unsafe-inline'/);
 });
 
