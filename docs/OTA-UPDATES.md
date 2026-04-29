@@ -154,12 +154,12 @@ const result = await updateManager.initialize({
   "channels": {
     "stable": {
       "version": "1.2.0",
-      "apkUrl": "https://github.com/joryirving/miso-chat/releases/download/v1.2.0/app-debug.apk",
+      "apkUrl": "https://github.com/misospace/miso-chat/releases/download/v1.2.0/app-debug.apk",
       "mandatory": false
     },
     "beta": {
       "version": "1.2.0",
-      "apkUrl": "https://github.com/joryirving/miso-chat/releases/download/v1.2.0/app-debug.apk",
+      "apkUrl": "https://github.com/misospace/miso-chat/releases/download/v1.2.0/app-debug.apk",
       "mandatory": false
     }
   }

@@ -9,7 +9,7 @@
   'use strict';
 
   const GITHUB_API_URL = 'https://api.github.com';
-  const REPO_OWNER = 'joryirving';
+  const REPO_OWNER = 'misospace';
   const REPO_NAME = 'miso-chat';
 
   function getUpdater() {

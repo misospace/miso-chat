@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-  echo "GITHUB_REPOSITORY is required (e.g. joryirving/miso-chat)"
+  echo "GITHUB_REPOSITORY is required (e.g. misospace/miso-chat)"
   exit 1
 fi
 

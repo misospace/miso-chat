@@ -1,10 +1,10 @@
 # Miso Chat
 
 <p align="center">
-  <img src="https://img.shields.io/docker/v/ghcr.io/joryirving/miso-chat?sort=semver&label=ghcr" alt="GHCR">
-  <img src="https://github.com/joryirving/miso-chat/actions/workflows/build.yaml/badge.svg" alt="Build">
-  <img src="https://img.shields.io/github/v/release/joryirving/miso-chat?sort=semver" alt="Release">
-  <img src="https://img.shields.io/github/license/joryirving/miso-chat" alt="License">
+  <img src="https://img.shields.io/docker/v/ghcr.io/misospace/miso-chat?sort=semver&label=ghcr" alt="GHCR">
+  <img src="https://github.com/misospace/miso-chat/actions/workflows/build.yaml/badge.svg" alt="Build">
+  <img src="https://img.shields.io/github/v/release/misospace/miso-chat?sort=semver" alt="Release">
+  <img src="https://img.shields.io/github/license/misospace/miso-chat" alt="License">
 </p>
 
 > Chat with your OpenClaw AI assistant from anywhere, protected by authentication.
@@ -25,7 +25,7 @@
 ### Docker Compose
 
 ```bash
-git clone https://github.com/joryirving/miso-chat.git
+git clone https://github.com/misospace/miso-chat.git
 cd miso-chat
 cp .env.example .env
 docker-compose up -d
@@ -38,7 +38,7 @@ docker run -d --name miso-chat \
   -p 3000:3000 \
   -e GATEWAY_URL=ws://your-gateway:18789 \
   -e SESSION_SECRET=your-secret \
-  ghcr.io/joryirving/miso-chat:latest
+  ghcr.io/misospace/miso-chat:latest
 ```
 
 ## Configuration
@@ -214,8 +214,8 @@ manager.on('reconnect-failed', (err) => {
 - [ ] Test WebSocket reconnection manually
 
 ### Issues & PRs
-- [Open Issues](https://github.com/joryirving/miso-chat/issues)
-- [Open PRs](https://github.com/joryirving/miso-chat/pulls)
+- [Open Issues](https://github.com/misospace/miso-chat/issues)
+- [Open PRs](https://github.com/misospace/miso-chat/pulls)
 
 ## Changelog
 

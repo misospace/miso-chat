@@ -72,7 +72,7 @@ const LINK_PREVIEW_MAX_HTML_CHARS = (() => {
 })();
 const LINK_PREVIEW_USER_AGENT =
   process.env.LINK_PREVIEW_USER_AGENT ||
-  `miso-chat-link-preview/${APP_VERSION} (+https://github.com/joryirving/miso-chat)`;
+  `miso-chat-link-preview/${APP_VERSION} (+https://github.com/misospace/miso-chat)`;
 function isPrivateIPv4(hostname) {
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
   const octets = hostname.split('.').map((part) => Number(part));

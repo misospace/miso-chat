@@ -3,7 +3,7 @@
 ## Current State
 - **Location**: `/home/node/.openclaw/workspace/miso-chat/`
 - **Main file**: `server.js` (247 lines)
-- **Container**: `ghcr.io/joryirving/miso-chat`
+- **Container**: `ghcr.io/misospace/miso-chat`
 - **Latest version**: 0.1.7
 
 ## What Works
