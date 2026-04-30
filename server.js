@@ -889,7 +889,11 @@ function buildGatewayDeviceAuth({ nonce, scopes }) {
   const signature = base64UrlEncode(crypto.sign(null, Buffer.from(payload, 'utf8'), crypto.createPrivateKey(identity.privateKeyPem)));
   return { id: identity.deviceId, publicKey: identity.publicKey, signature, signedAt, nonce };
 }
-const gatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN || 'http://localhost:3000';
+// Infer GATEWAY_WS_ORIGIN from CORS_ORIGIN if not explicitly set
+const configuredGatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN;
+const corsOrigin = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
+const firstCorsOrigin = corsOrigin.split(',')[0].trim();
+const gatewayWsOrigin = configuredGatewayWsOrigin || firstCorsOrigin || 'http://localhost:3000';
 const GATEWAY_URL = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || 'http://openclaw.llm.svc.cluster.local:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.GATEWAY_AUTH_TOKEN || '';
 const gatewayWsManager = new GatewayWsManager({
