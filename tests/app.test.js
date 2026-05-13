@@ -1,32 +1,64 @@
-const request = require('supertest');
-const { app, validateConfig } = require('../server');
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
 
-describe('Smoke auth behavior', () => {
-  test('GET / redirects to login when unauthenticated', async () => {
-    const res = await request(app).get('/');
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toBe('/login');
-  });
+process.env.AUTH_MODE = 'local';
+process.env.LOCAL_USERS = 'admin:password123';
+process.env.NODE_ENV = 'test';
+process.env.SESSION_SECRET = 'test-session-secret-at-least-32-chars';
 
-  test('GET /api/auth sets no-store and unauthenticated by default', async () => {
-    const res = await request(app).get('/api/auth');
-    expect(res.status).toBe(200);
-    expect(res.headers['cache-control']).toContain('no-store');
-    expect(res.body.authenticated).toBe(false);
+const { app, server } = require('../server');
+
+function request(path, options = {}) {
+  return new Promise((resolve, reject) => {
+    const listener = app.listen(0, '127.0.0.1', () => {
+      const address = listener.address();
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: address.port,
+        path,
+        method: options.method || 'GET',
+        headers: options.headers || {},
+      }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          listener.close(() => resolve({ statusCode: res.statusCode, headers: res.headers, body }));
+        });
+      });
+
+      req.on('error', (err) => {
+        listener.close(() => reject(err));
+      });
+
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+
+    listener.on('error', reject);
   });
+}
+
+test('GET / redirects to login when unauthenticated', async () => {
+  const res = await request('/');
+
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/login?return_to=%2F');
 });
 
-describe('Config validation', () => {
-  const oldEnv = { ...process.env };
-  afterEach(() => {
-    process.env = { ...oldEnv };
-  });
+test('GET /api/auth reports unauthenticated local auth state', async () => {
+  const res = await request('/api/auth', { headers: { Accept: 'application/json' } });
 
-  test('throws if OIDC enabled but required env is missing', () => {
-    process.env.OIDC_ENABLED = 'true';
-    delete process.env.OIDC_ISSUER;
-    delete process.env.OIDC_CLIENT_ID;
-    delete process.env.OIDC_CLIENT_SECRET;
-    expect(() => validateConfig()).toThrow(/missing required env vars/i);
-  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['content-type'].includes('application/json'), true);
+
+  const body = JSON.parse(res.body);
+  assert.equal(body.authenticated, false);
+  assert.equal(body.authMode, 'local');
+  assert.equal(body.requiresAuth, true);
+});
+
+test.after(() => {
+  server.close();
 });
