@@ -803,7 +803,7 @@ const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
 const GATEWAY_WS_CLIENT_MODE = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
 const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH || path.join(process.env.HOME || '/home/node', '.openclaw', 'identity', 'device.json');
 const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
-const REQUESTED_GATEWAY_SCOPES = ['operator.read','operator.write','operator.admin','operator.pairing','chat.send','sessions.send','sessions.list','sessions.history'];
+const REQUESTED_GATEWAY_SCOPES = ['operator.read','operator.write','operator.admin','operator.pairing'];
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 let cachedGatewayDeviceIdentity = null;
 
