@@ -59,6 +59,7 @@ docker run -d --name miso-chat \
 | `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key exposed to clients |
 | `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | Private VAPID key used server-side |
 | `PUSH_VAPID_SUBJECT` | If push enabled | - | Contact URI for VAPID claims (for example `mailto:admin@example.com`) |
+| `GATEWAY_ADMIN_SCOPES` | No | `false` | Opt-in for admin/pairing gateway scopes (`true` enables `operator.admin` and `operator.pairing`; default is least-privilege) |
 
 Generate VAPID keys with:
 
@@ -67,6 +68,26 @@ npx web-push generate-vapid-keys
 ```
 
 When `PUSH_NOTIFICATIONS_ENABLED=true`, startup now fails fast if any required `PUSH_VAPID_*` variable is missing.
+
+## Gateway Scope Model
+
+The miso-chat gateway WebSocket client requests OAuth scopes from the OpenClaw gateway on connect.
+
+- **Default scopes** (least-privilege): `operator.read`, `operator.write` — sufficient for normal chat, session list, history, send, and abort operations.
+- **Admin/pairing scopes**: `operator.admin`, `operator.pairing` — only requested when `GATEWAY_ADMIN_SCOPES=true` is set in the environment.
+
+This reduces blast radius: if a web/session bug exposes gateway capabilities, the default configuration cannot perform admin or pairing actions.
+
+### Migration path
+
+Deployments that need admin or pairing features (e.g., device pairing flows, admin tooling) should set:
+
+```bash
+-e GATEWAY_ADMIN_SCOPES=true \
+```
+
+No code changes are required — the scope list is built at startup from the environment variable.
+
 
 ## Security
 
