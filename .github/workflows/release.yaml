@@ -162,3 +162,27 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           DEPLOY_HEALTH_URL: ${{ secrets.RELEASE_SMOKE_HEALTH_URL }}
         run: ./scripts/release-readiness-check.sh
+
+  version-consistency:
+    name: Version consistency check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Compare release tag with package.json version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          TAG_VERSION="${RELEASE_TAG#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "Release tag: ${TAG_VERSION}"
+          echo "package.json: ${PKG_VERSION}"
+          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
+            echo "❌ Version drift detected: release tag ${TAG_VERSION} does not match package.json ${PKG_VERSION}"
+            echo "Update package.json to ${TAG_VERSION} using: npm version ${TAG_VERSION} --no-git-tag-version"
+            exit 1
+          fi
+          echo "✅ Release tag matches package.json version: ${TAG_VERSION}"

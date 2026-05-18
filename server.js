@@ -12,12 +12,16 @@ const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const dns = require("dns");
+const { promisify } = require("util");
 require('dotenv').config();
 
 const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
+
+const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps } = require('./lib/ssrf-validation');
 
 const app = express();
 const server = http.createServer(app);
@@ -101,17 +105,6 @@ function isPrivateIPv6(hostname) {
   );
 }
 
-function isForbiddenLinkPreviewHost(hostname) {
-  const normalized = String(hostname || '').toLowerCase();
-  if (!normalized) return true;
-  if (normalized === 'localhost' || normalized.endsWith('.localhost') || normalized.endsWith('.local')) {
-    return true;
-  }
-  if (isPrivateIPv4(normalized) || isPrivateIPv6(normalized)) {
-    return true;
-  }
-  return false;
-}
 
 function decodeHtmlEntities(value) {
   return String(value || '')
@@ -948,11 +941,47 @@ async function waitForGatewayWsReady(timeoutMs = 1500) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({
+  const isWsConnected = gatewayWsManager?.isConnected?.() || false;
+  const reconnectAttempts = gatewayWsManager?.reconnectAttempts || 0;
+  const pendingRequests = gatewayWsManager?.getPendingRequestCount?.() || 0;
+  const pendingForRecovery = gatewayWsManager?.getPendingForRecoveryCount?.() || 0;
+
+  // Determine realtime health state
+  let realtimeState = 'disconnected';
+  if (isWsConnected) {
+    realtimeState = 'healthy';
+  } else if (reconnectAttempts > 0) {
+    realtimeState = 'reconnecting';
+  } else if (gatewayWsLastError) {
+    realtimeState = 'degraded';
+  }
+
+  const healthPayload = {
     status: 'healthy',
     version: APP_VERSION,
     timestamp: new Date().toISOString(),
-  });
+    gatewayWs: {
+      connected: isWsConnected,
+      connecting: gatewayWsManager?.connecting || false,
+      reconnectAttempts,
+      pendingRequests,
+      pendingForRecovery,
+      lastError: gatewayWsLastError || null,
+      lastClose: gatewayWsLastClose || null,
+    },
+    realtime: {
+      state: realtimeState,
+      message: isWsConnected
+        ? 'Gateway WebSocket connected'
+        : reconnectAttempts > 0
+          ? `Reconnecting (attempt ${reconnectAttempts})`
+          : gatewayWsLastError
+            ? `Error: ${gatewayWsLastError}`
+            : 'Gateway WebSocket not connected',
+    },
+  };
+
+  res.json(healthPayload);
 });
 
 
@@ -1279,31 +1308,65 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
     return res.status(400).json({ error: 'Local/private hosts are not allowed for previews' });
   }
 
+  // Hardened fetch with manual redirect following and hop-by-hop validation
+  const MAX_REDIRECTS = 5;
+  let currentUrl = targetUrl.toString();
+  let redirectCount = 0;
+  let finalResponse = null;
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
 
   try {
-    const response = await fetch(targetUrl.toString(), {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': LINK_PREVIEW_USER_AGENT,
-      },
-    });
+    while (redirectCount <= MAX_REDIRECTS) {
+      const parsedUrl = new URL(currentUrl);
 
-    if (!response.ok) {
-      return res.status(502).json({ error: `Upstream request failed (${response.status})` });
+      // Validate each hop's hostname (with DNS resolution for rebinding protection)
+      if (isForbiddenLinkPreviewHost(parsedUrl.hostname, { resolveDns: true })) {
+        clearTimeout(timeoutHandle);
+        return res.status(400).json({ error: 'Redirect target is a local/private host' });
+      }
+
+      const hopRes = await fetch(currentUrl, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          Accept: 'text/html,application/xhtml+xml',
+          'User-Agent': LINK_PREVIEW_USER_AGENT,
+        },
+      });
+
+      if (hopRes.status >= 300 && hopRes.status < 400 && hopRes.headers.get('location')) {
+        redirectCount++;
+        if (redirectCount > MAX_REDIRECTS) {
+          clearTimeout(timeoutHandle);
+          return res.status(400).json({ error: 'Redirect chain too long' });
+        }
+        try {
+          currentUrl = new URL(hopRes.headers.get('location'), currentUrl).toString();
+        } catch {
+          clearTimeout(timeoutHandle);
+          return res.status(400).json({ error: 'Invalid redirect URL' });
+        }
+        continue;
+      }
+
+      finalResponse = hopRes;
+      break;
     }
 
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!finalResponse || !finalResponse.ok) {
+      const status = finalResponse?.status || 502;
+      return res.status(status >= 300 && status < 400 ? 400 : 502).json({ error: `Upstream request failed (${status})` });
+    }
+
+    const contentType = String(finalResponse.headers.get('content-type') || '').toLowerCase();
     if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
       return res.status(422).json({ error: 'URL does not point to an HTML document' });
     }
 
-    const html = (await response.text()).slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
-    const finalUrl = response.url || targetUrl.toString();
+    const html = (await finalResponse.text()).slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
+    const finalUrl = finalResponse.url || targetUrl.toString();
     const preview = extractLinkPreviewData(html, finalUrl);
 
     return res.json(preview);
