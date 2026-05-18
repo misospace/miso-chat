@@ -940,11 +940,47 @@ async function waitForGatewayWsReady(timeoutMs = 1500) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({
+  const isWsConnected = gatewayWsManager?.isConnected?.() || false;
+  const reconnectAttempts = gatewayWsManager?.reconnectAttempts || 0;
+  const pendingRequests = gatewayWsManager?.getPendingRequestCount?.() || 0;
+  const pendingForRecovery = gatewayWsManager?.getPendingForRecoveryCount?.() || 0;
+
+  // Determine realtime health state
+  let realtimeState = 'disconnected';
+  if (isWsConnected) {
+    realtimeState = 'healthy';
+  } else if (reconnectAttempts > 0) {
+    realtimeState = 'reconnecting';
+  } else if (gatewayWsLastError) {
+    realtimeState = 'degraded';
+  }
+
+  const healthPayload = {
     status: 'healthy',
     version: APP_VERSION,
     timestamp: new Date().toISOString(),
-  });
+    gatewayWs: {
+      connected: isWsConnected,
+      connecting: gatewayWsManager?.connecting || false,
+      reconnectAttempts,
+      pendingRequests,
+      pendingForRecovery,
+      lastError: gatewayWsLastError || null,
+      lastClose: gatewayWsLastClose || null,
+    },
+    realtime: {
+      state: realtimeState,
+      message: isWsConnected
+        ? 'Gateway WebSocket connected'
+        : reconnectAttempts > 0
+          ? `Reconnecting (attempt ${reconnectAttempts})`
+          : gatewayWsLastError
+            ? `Error: ${gatewayWsLastError}`
+            : 'Gateway WebSocket not connected',
+    },
+  };
+
+  res.json(healthPayload);
 });
 
 

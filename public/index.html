@@ -3790,10 +3790,20 @@
 
         // SSE connection for real-time gateway events
         let eventSource = null;
+        let sseReconnectTimer = null;
+
         function connectEventSource() {
+            // Prevent duplicate EventSource instances: close any existing one first
             if (eventSource) {
                 eventSource.close();
+                eventSource = null;
             }
+            // Clear any pending reconnect timer to avoid duplicates
+            if (sseReconnectTimer) {
+                clearTimeout(sseReconnectTimer);
+                sseReconnectTimer = null;
+            }
+
             eventSource = new EventSource(apiUrl('/api/events'));
 
             eventSource.onopen = () => {
@@ -3828,6 +3838,14 @@
                 }
             };
 
+            eventSource.onclose = () => {
+                // Explicit close (not an error): don't auto-reconnect
+                sseConnected = false;
+                sseTypingActive = false;
+                updateTypingIndicator();
+                console.log('📡 SSE connection closed');
+            };
+
             eventSource.onerror = async () => {
                 sseConnected = false;
                 sseTypingActive = false;
@@ -3835,8 +3853,12 @@
                 console.warn('📡 SSE connection error, reconnecting...');
                 startHistoryPolling();
                 await refreshBackendHealth();
-                eventSource = null;
-                setTimeout(connectEventSource, 5000);
+                // Don't null eventSource here — let onclose handle cleanup.
+                // Schedule reconnection with a single timer to prevent duplicates.
+                sseReconnectTimer = setTimeout(() => {
+                    sseReconnectTimer = null;
+                    connectEventSource();
+                }, 5000);
             };
         }
 
