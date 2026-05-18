@@ -125,12 +125,20 @@ test('GatewayWsManager stores pending requests for recovery on disconnect', () =
 test('GatewayWsManager recovers pending requests after reconnect', () => {
   const manager = new GatewayWsManager();
   
-  // Set up pending for recovery
+  // Provide a mock WebSocket so the resend path works
+  manager.ws = { readyState: 1, send: () => {} };
+  manager.connected = true;
+  
   let pendingResolve;
   const promise = new Promise((resolve) => { pendingResolve = resolve; });
   const id = manager.createRequestId('test');
   const timeout = setTimeout(() => {}, 50);
-  manager._recoveryPending = new Map([[id, { resolve: pendingResolve, reject: () => {}, timeout }]]);
+  manager._recoveryPending = new Map([[id, { 
+    resolve: pendingResolve, 
+    reject: () => {}, 
+    timeout,
+    frameData: { type: 'req', id, method: 'test', params: {} },
+  }]]);
   
   assert.equal(manager.getPendingForRecoveryCount(), 1, 'should have 1 pending for recovery');
   
