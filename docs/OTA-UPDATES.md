@@ -237,3 +237,56 @@ await MobileUpdateManager.cleanupBundles(3);
 - [ ] Update scheduling (WiFi-only, off-peak hours)
 - [ ] In-app update progress indicator
 - [ ] Update analytics dashboard
+## Update Source Configuration (v0.5.0+)
+
+### Server-Served Update Manifest
+
+Starting from v0.5.0, the mobile updater prefers a server-served manifest endpoint
+instead of directly hitting the GitHub API. This allows operators to:
+
+- Proxy or cache update manifests without client-side config changes
+- Replace GitHub releases with an alternative distribution channel by setting env vars
+- Add authentication or rate-limiting at the server layer
+
+**Endpoint:** `GET /api/mobile/update-manifest`
+
+The server fetches the `update-manifest.json` asset from the latest GitHub release,
+caches it for 5 minutes (configurable), and serves it to clients. The client falls
+back to direct GitHub API lookup if the server endpoint is unavailable.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOBILE_UPDATE_REPO_OWNER` | `misospace` | GitHub org for update releases |
+| `MOBILE_UPDATE_REPO_NAME` | `miso-chat` | GitHub repo for update releases |
+| `MOBILE_UPDATE_CACHE_TTL_MS` | `300000` | Cache TTL in milliseconds (5 min) |
+
+To switch to a different release source, set `MOBILE_UPDATE_REPO_OWNER` and
+`MOBILE_UPDATE_REPO_NAME` to point at the new GitHub repo, or replace the server
+endpoint implementation entirely.
+
+### Client Update Flow
+
+```
+1. Client calls GET /api/mobile/update-manifest
+2. Server returns cached/fetched manifest JSON
+3. If server fails → client falls back to GitHub API direct lookup
+4. Client compares manifest version vs current bundle version
+5. If newer → download bundle, apply update on next restart
+```
+
+### Release Version Validation
+
+Run `node scripts/release-version-check.js` before publishing a release to verify:
+- `package.json` version matches the git tag (if present)
+- `update-manifest.json` version matches `package.json` (if present)
+
+```bash
+# Pre-release validation
+node scripts/release-version-check.js --tag v0.5.0
+
+# Post-release validation (with existing manifest)
+node scripts/release-version-check.js --manifest-path update-manifest.json
+```
+

@@ -77,6 +77,15 @@ const LINK_PREVIEW_MAX_HTML_CHARS = (() => {
 const LINK_PREVIEW_USER_AGENT =
   process.env.LINK_PREVIEW_USER_AGENT ||
   `miso-chat-link-preview/${APP_VERSION} (+https://github.com/misospace/miso-chat)`;
+
+// Mobile OTA update configuration
+const MOBILE_UPDATE_REPO_OWNER = process.env.MOBILE_UPDATE_REPO_OWNER || "misospace";
+const MOBILE_UPDATE_REPO_NAME = process.env.MOBILE_UPDATE_REPO_NAME || "miso-chat";
+const MOBILE_UPDATE_GITHUB_API_URL = "https://api.github.com";
+const MOBILE_UPDATE_CACHE_TTL_MS = Number(process.env.MOBILE_UPDATE_CACHE_TTL_MS || 300000); // 5 min default
+// In-memory cache: process-level only (not shared across multiple server instances behind LB)
+let mobileUpdateCache = null;
+let mobileUpdateCacheTime = 0;
 function isPrivateIPv4(hostname) {
   if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
   const octets = hostname.split('.').map((part) => Number(part));
@@ -779,6 +788,45 @@ app.post('/api/mobile-auth/consume', (req, res) => {
     });
   });
 });
+
+// GET /api/mobile/update-manifest - Serve update manifest from latest GitHub release
+app.get("/api/mobile/update-manifest", async (req, res) => {
+  const now = Date.now();
+  if (
+    mobileUpdateCache
+    && mobileUpdateCacheTime
+    && (now - mobileUpdateCacheTime) < MOBILE_UPDATE_CACHE_TTL_MS
+  ) {
+    return res.json(mobileUpdateCache);
+  }
+
+  try {
+    const resp = await fetch(
+      `${MOBILE_UPDATE_GITHUB_API_URL}/repos/${MOBILE_UPDATE_REPO_OWNER}/${MOBILE_UPDATE_REPO_NAME}/releases/latest`,
+      { headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": `miso-chat-update/${APP_VERSION}` } },
+    );
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: "Failed to fetch latest release" });
+    }
+    const release = await resp.json();
+    const manifestAsset = (release.assets || []).find((a) => a.name === "update-manifest.json");
+    if (!manifestAsset) {
+      return res.status(404).json({ error: "update-manifest.json not found in latest release" });
+    }
+    const manifestResp = await fetch(manifestAsset.browser_download_url, { headers: { Accept: "application/json" } });
+    if (!manifestResp.ok) {
+      return res.status(manifestResp.status).json({ error: "Failed to fetch update manifest" });
+    }
+    const manifest = await manifestResp.json();
+    mobileUpdateCache = manifest;
+    mobileUpdateCacheTime = now;
+    return res.json(manifest);
+  } catch (error) {
+    console.error("Mobile update manifest fetch failed:", error.message || error);
+    return res.status(502).json({ error: "Unable to retrieve update manifest" });
+  }
+});
+
 
 // Protected routes
 app.get('/', isAuthenticated, (req, res) => res.sendFile(__dirname + '/public/index.html'));

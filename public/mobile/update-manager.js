@@ -8,6 +8,8 @@
 (function(window) {
   'use strict';
 
+  // Update source: prefer server endpoint, fall back to GitHub API
+  const MOBILE_UPDATE_MANIFEST_ENDPOINT = '/api/mobile/update-manifest';
   const GITHUB_API_URL = 'https://api.github.com';
   const REPO_OWNER = 'misospace';
   const REPO_NAME = 'miso-chat';
@@ -67,6 +69,26 @@
     },
 
     getLatestManifest: async function() {
+      // Try server endpoint first (configurable, no hardcoded GitHub repo)
+      try {
+        const manifestResp = await fetch(MOBILE_UPDATE_MANIFEST_ENDPOINT, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (manifestResp.ok) {
+          const manifest = await manifestResp.json();
+          // Fetch release info in parallel for release notes
+          let release = null;
+          try {
+            const releaseResp = await fetch(`${GITHUB_API_URL}/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`, {
+              headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'MisoChat-Mobile-UpdateManager' }
+            });
+            if (releaseResp.ok) release = await releaseResp.json();
+          } catch (_) { /* release info is optional */ }
+          return { release, manifest };
+        }
+      } catch (_) { /* fall through to GitHub API */ }
+
+      // Fallback: direct GitHub API lookup
       const releaseResp = await fetch(`${GITHUB_API_URL}/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -91,7 +113,6 @@
       }
 
       const manifest = await manifestResp.json();
-      return { release, manifest };
     },
 
     checkForUpdate: async function() {
