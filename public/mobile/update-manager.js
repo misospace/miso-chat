@@ -10,7 +10,7 @@
 
   // Update source: prefer server endpoint, fall back to GitHub API
   const MOBILE_UPDATE_MANIFEST_ENDPOINT = '/api/mobile/update-manifest';
-const GITHUB_API_URL = 'https://api.github.com';
+  const GITHUB_API_URL = 'https://api.github.com';
   const REPO_OWNER = 'misospace';
   const REPO_NAME = 'miso-chat';
 
