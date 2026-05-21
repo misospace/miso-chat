@@ -1,15 +1,19 @@
 version: '3.8'
 
+# ── Sample Docker Compose ────────────────────────────────────────
+# This file is intended for local development. For production, copy
+# this template and override environment variables via a .env file
+# or your deployment platform.
+#
+# See .env.example for all available options.
+
 services:
   openclaw-chat:
     build: .
     ports:
       - "3000:3000"
-    environment:
-      - GATEWAY_URL=ws://host.docker.internal:18789
-      - SESSION_SECRET=dev-secret-change-in-production
-      - OIDC_ENABLED=false
-      - LOCAL_USERS=admin:password123
+    env_file:
+      - .env
     volumes:
       - .:/app
     restart: unless-stopped
