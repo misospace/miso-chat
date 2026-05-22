@@ -113,6 +113,7 @@
       }
 
       const manifest = await manifestResp.json();
+      return { release, manifest };
     },
 
     checkForUpdate: async function() {
