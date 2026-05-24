@@ -498,9 +498,22 @@ if (oidcEnabled) {
   ));
 }
 
-const allowedReturnToSchemes = new Set(['http:', 'https:', 'capacitor:', 'ionic:', 'misochat:']);
+const WEB_RETURN_TO_SCHEMES = new Set(['http:', 'https:']);
+const MOBILE_RETURN_TO_SCHEMES = new Set(['capacitor:', 'ionic:', 'misochat:']);
+const CROSS_ORIGIN_ALLOWLIST = new Set(
+  (process.env.ALLOWED_RETURN_ORIGINS || '')
+    .split(',')
+    .map((o) => {
+      try {
+        return new URL(o.trim()).origin;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+);
 
-function getReturnTo(req, fallback = '/') {
+function getReturnTo(req, fallback = '/', mode = 'any') {
   const raw = typeof req.body?.return_to === 'string' && req.body.return_to.trim()
     ? req.body.return_to.trim()
     : (typeof req.query?.return_to === 'string' && req.query.return_to.trim()
@@ -512,7 +525,29 @@ function getReturnTo(req, fallback = '/') {
 
   try {
     const parsed = new URL(raw);
-    if (!allowedReturnToSchemes.has(parsed.protocol)) return fallback;
+
+    if (mode === 'web') {
+      if (WEB_RETURN_TO_SCHEMES.has(parsed.protocol)) {
+        if (parsed.origin === `${req.protocol}://${req.get('host')}`) {
+          return parsed.pathname + parsed.search + parsed.hash;
+        }
+        if (CROSS_ORIGIN_ALLOWLIST.has(parsed.origin)) {
+          return parsed.toString();
+        }
+      }
+      return fallback;
+    }
+
+    if (mode === 'mobile') {
+      if (MOBILE_RETURN_TO_SCHEMES.has(parsed.protocol)) {
+        return parsed.toString();
+      }
+      return fallback;
+    }
+
+    // 'any' mode: allow any recognized scheme for backward compatibility
+    const allSchemes = new Set([...WEB_RETURN_TO_SCHEMES, ...MOBILE_RETURN_TO_SCHEMES]);
+    if (!allSchemes.has(parsed.protocol)) return fallback;
     return parsed.toString();
   } catch {
     return fallback;
@@ -582,7 +617,7 @@ const isAuthenticated = (req, res, next) => {
     });
   }
 
-  const returnTo = encodeURIComponent(getReturnTo(req, req.originalUrl || '/'));
+  const returnTo = encodeURIComponent(getReturnTo(req, req.originalUrl || '/', 'web'));
   return res.redirect(`/login?return_to=${returnTo}`);
 };
 
@@ -594,7 +629,7 @@ function getOidcLabel() {
 
 // Login
 app.get('/login', (req, res) => {
-  const returnTo = getReturnTo(req, '/');
+  const returnTo = getReturnTo(req, '/', 'web');
 
   if (authMode === 'none') {
     return res.redirect(returnTo);
@@ -622,11 +657,11 @@ app.get('/api/login-options', (req, res) => {
 
 app.post('/login', authLimiter, (req, res, next) => {
   if (!localAuthEnabled) {
-    const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+    const returnTo = encodeURIComponent(getReturnTo(req, '/', 'web'));
     return res.redirect(`/login?error=local_disabled&return_to=${returnTo}`);
   }
 
-  const returnTo = getReturnTo(req, '/');
+  const returnTo = getReturnTo(req, '/', 'web');
   const failureReturnTo = encodeURIComponent(returnTo);
 
   return passport.authenticate('local', (err, user) => {
@@ -654,7 +689,7 @@ app.post('/login', authLimiter, (req, res, next) => {
 });
 app.get('/auth/oidc', (req, res, next) => {
   if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
-  const returnTo = getReturnTo(req, '/');
+  const returnTo = getReturnTo(req, '/', 'web');
   const mobileRequested = req.query?.mobile === '1';
   const prompt = req.query?.prompt === 'login' ? 'login' : undefined;
   req.session.oidcReturnTo = returnTo;
@@ -671,7 +706,7 @@ app.get('/auth/oidc', (req, res, next) => {
 app.get('/auth/oidc/callback', (req, res, next) => {
   passport.authenticate('oidc', (err, user) => {
     if (err || !user) {
-      const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+      const returnTo = encodeURIComponent(getReturnTo(req, '/', 'web'));
       return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
     }
 
@@ -680,14 +715,14 @@ app.get('/auth/oidc/callback', (req, res, next) => {
 
     return establishLoginSession(req, user, (loginErr) => {
       if (loginErr) {
-        const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+        const returnTo = encodeURIComponent(getReturnTo(req, '/', 'web'));
         console.error('OIDC login session setup failed:', loginErr.message || loginErr);
         return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
       }
 
       return persistLoginSession(req, (saveErr) => {
         if (saveErr) {
-          const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+          const returnTo = encodeURIComponent(getReturnTo(req, '/', 'web'));
           console.error('OIDC login session persist failed:', saveErr.message || saveErr);
           return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
         }
@@ -697,7 +732,7 @@ app.get('/auth/oidc/callback', (req, res, next) => {
         const mobileFlow = mobileFlowFromSession || (isMobileUa && !storedReturnTo);
 
         const safeReturnTo = storedReturnTo
-          ? getReturnTo({ query: { return_to: storedReturnTo } }, '/')
+          ? getReturnTo({ query: { return_to: storedReturnTo } }, '/', 'web')
           : (mobileFlow ? 'misochat://auth/callback' : '/');
 
         if (mobileFlow) {
@@ -736,7 +771,7 @@ app.post('/logout', (req, res) => {
 
 app.get('/auth/mobile-complete', (req, res) => {
   const token = typeof req.query?.token === 'string' ? req.query.token : '';
-  const returnTo = getReturnTo(req, '/');
+  const returnTo = getReturnTo(req, '/', 'mobile');
 
   if (!token) {
     return res.status(400).send('Missing mobile auth token');
@@ -1782,4 +1817,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server, startServer };
+module.exports = { app, server, startServer, getReturnTo };
