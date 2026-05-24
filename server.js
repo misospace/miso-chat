@@ -352,6 +352,9 @@ app.use((req, res, next) => {
 // Serve static assets, but do NOT auto-serve /index.html at root (keeps auth gate on /)
 app.use(express.static('public', { index: false }));
 
+// Serve lib/ JS modules as browser-accessible scripts (e.g. /lib/render-utils.js)
+app.use('/lib', express.static(path.join(__dirname, 'lib'), { index: false, extensions: ['js'] }));
+
 // Session config (Redis-backed when REDIS_URL is set)
 const defaultSessionSecret = 'dev-secret-change-in-production';
 const sessionSecret = (process.env.SESSION_SECRET || '').trim() || defaultSessionSecret;

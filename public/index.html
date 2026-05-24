@@ -17,6 +17,10 @@
     <link rel="manifest" href="/manifest.json">
     <!-- OTA Update Manager -->
     <script src="/mobile/update-manager.js"></script>
+    <!-- Extracted rendering utilities (shared with tests) -->
+    <script src="/lib/render-utils.js"></script>
+    <!-- Reaction event parsing (mirrors lib/reaction-events.js for browser) -->
+    <script src="/lib/reaction-events-browser.js"></script>
     
     <style>
         :root {
@@ -1365,7 +1369,7 @@
             await persistStoredSessionKey(null);
         }
 
-        const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
+       const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
         const TABLE_REGEX = /\|[^\n]+\|\n\|[-:|\s]+\|\n((?:\|[^\n]+\|\n?)+)/g;
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
@@ -1373,107 +1377,6 @@
         const ATTACHMENT_LINE_PREFIX = '[attachment:';
         const linkPreviewCache = new Map();
         const pendingLinkPreviewRequests = new Map();
-
-        function escapeHtml(value) {
-            return String(value || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-        }
-
-        function normalizedLang(lang) {
-            const value = String(lang || '').trim().toLowerCase();
-            if (['js', 'jsx', 'mjs', 'cjs'].includes(value)) return 'javascript';
-            if (['ts', 'tsx'].includes(value)) return 'typescript';
-            if (['sh', 'zsh'].includes(value)) return 'bash';
-            if (value === 'yml') return 'yaml';
-            return value;
-        }
-
-        function protectTokenMatches(source, patterns) {
-            let out = source;
-            const tokens = [];
-
-            patterns.forEach(({ regex, className }) => {
-                out = out.replace(regex, (match) => {
-                    const index = tokens.push(`<span class="${className}">${match}</span>`) - 1;
-                    return `__TOK_${index}__`;
-                });
-            });
-
-            return { out, tokens };
-        }
-
-        function restoreTokenMatches(source, tokens) {
-            return source.replace(/__TOK_(\d+)__/g, (_, rawIndex) => {
-                const index = Number(rawIndex);
-                return Number.isInteger(index) && tokens[index] ? tokens[index] : '';
-            });
-        }
-
-        function highlightCode(rawCode, lang) {
-            const source = escapeHtml(rawCode);
-            const grammar = normalizedLang(lang);
-
-            if (['javascript', 'typescript'].includes(grammar)) {
-                const { out: base, tokens } = protectTokenMatches(source, [
-                    { regex: /(\/\/[^\n]*)/g, className: 'tok-comment' },
-                    { regex: /(`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, className: 'tok-string' },
-                ]);
-
-                let out = base;
-                out = out.replace(/\b(const|let|var|function|return|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|from|export|default|async|await|typeof|instanceof)\b/g, '<span class="tok-keyword">$1</span>');
-                out = out.replace(/\b(true|false|null|undefined)\b/g, '<span class="tok-boolean">$1</span>');
-                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
-                out = out.replace(/([{}()[\].,;:])/g, '<span class="tok-punctuation">$1</span>');
-                out = out.replace(/([+\-*\/%=&|!<>]+)/g, '<span class="tok-operator">$1</span>');
-
-                return restoreTokenMatches(out, tokens);
-            }
-
-            if (grammar === 'json') {
-                let out = source;
-                out = out.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"(?=\s*:)/g, '<span class="tok-property">"$1"</span>');
-                out = out.replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="tok-string">$1</span>');
-                out = out.replace(/\b(true|false|null)\b/g, '<span class="tok-boolean">$1</span>');
-                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
-                out = out.replace(/([{}[\],])/g, '<span class="tok-punctuation">$1</span>');
-                return out;
-            }
-
-            if (grammar === 'yaml') {
-                let out = source;
-                out = out.replace(/(^|\n)(\s*#.*)/g, '$1<span class="tok-comment">$2</span>');
-                out = out.replace(/(^|\n)(\s*[\w.-]+)(\s*:)/g, '$1<span class="tok-property">$2</span>$3');
-                out = out.replace(/:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, ': <span class="tok-string">$1</span>');
-                out = out.replace(/\b(true|false|null|yes|no|on|off)\b/gi, '<span class="tok-boolean">$1</span>');
-                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
-                return out;
-            }
-
-            if (grammar === 'bash' || grammar === 'shell') {
-                let out = source;
-                out = out.replace(/(^|\n)(\s*#.*)/g, '$1<span class="tok-comment">$2</span>');
-                out = out.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, '<span class="tok-string">$1</span>');
-                out = out.replace(/(^|\n)(\s*)([a-zA-Z_][\w.-]*)/g, '$1$2<span class="tok-command">$3</span>');
-                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
-                return out;
-            }
-
-            return source;
-        }
-
-        function encodeCopyPayload(value) {
-            return btoa(unescape(encodeURIComponent(String(value || ''))));
-        }
-
-        function decodeCopyPayload(payload) {
-            try {
-                return decodeURIComponent(escape(atob(payload || '')));
-            } catch {
-                return '';
-            }
-        }
 
         async function copyCodeFromButton(button) {
             const payload = button?.dataset?.copyPayload;
@@ -2135,69 +2038,10 @@
         let serviceWorkerRegistration = null;
         let notificationPermissionPrompted = false;
 
-        function resolveShortcodeEmoji(shortcode) {
-            const normalized = normalizeShortcode(shortcode).replace(/-/g, '_');
-            if (!normalized) return '';
-
-            return EMOJI_SHORTCODES[normalized]
-                || EMOJI_SHORTCODES[normalized.replace(/^thumbsup$/, 'thumbs_up')]
-                || EMOJI_SHORTCODES[normalized.replace(/^thumbsdown$/, 'thumbs_down')]
-                || '';
-        }
-
-        function normalizeReactionEmoji(rawEmoji) {
-            const value = String(rawEmoji || '').trim();
-            if (!value) return '';
-            const shortcodeMatch = value.match(/^:([^:]+):$/);
-            if (!shortcodeMatch) return value;
-
-            return resolveShortcodeEmoji(shortcodeMatch[1]) || value;
-        }
-
-        function parseGatewayReactionEvent(text) {
-            const raw = String(text || '').trim();
-            if (!raw) return null;
-
-            const matchers = [
-                {
-                    channel: 'telegram',
-                    regex: /^Telegram reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+on msg\s+([^\s]+)$/i,
-                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
-                },
-                {
-                    channel: 'slack',
-                    regex: /^Slack reaction (added|removed):\s+(:[^\s]+:)\s+by\s+(.+?)\s+in\s+.+?\s+msg\s+([^\s]+)(?:\s+from\s+.+)?$/i,
-                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
-                },
-                {
-                    channel: 'discord',
-                    regex: /^Discord reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+on\s+.+?\s+msg\s+([^\s]+)(?:\s+from\s+.+)?$/i,
-                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
-                },
-                {
-                    channel: 'signal',
-                    regex: /^Signal reaction (added|removed):\s+(.+?)\s+by\s+(.+?)\s+msg\s+([^\s]+)$/i,
-                    toEvent: (m) => ({ action: m[1].toLowerCase(), emoji: normalizeReactionEmoji(m[2]), actor: m[3], messageId: m[4] }),
-                },
-            ];
-
-            for (const matcher of matchers) {
-                const matched = raw.match(matcher.regex);
-                if (!matched) continue;
-                const parsed = matcher.toEvent(matched);
-                if (!parsed?.messageId || !parsed?.emoji) return null;
-                return {
-                    channel: matcher.channel,
-                    action: parsed.action,
-                    emoji: parsed.emoji,
-                    actor: parsed.actor,
-                    messageId: String(parsed.messageId),
-                    raw,
-                };
-            }
-
-            return null;
-        }
+        // Reaction event parsing functions are loaded from /lib/reaction-events-browser.js
+        // to avoid duplication with lib/reaction-events.js (server). The browser version
+        // uses a minimal shortcode map since reaction display is currently disabled.
+        // See issue #477 for tracking this extraction.
 
         function updateReactionRow(row, key) {
             row.querySelectorAll('.reaction-btn').forEach((node) => {
@@ -2262,12 +2106,6 @@
             saveReactions(messageReactions);
             syncReactionRows(key);
             return true;
-        }
-
-        function isNativeCapacitor() {
-            return typeof window.Capacitor !== 'undefined'
-                && typeof window.Capacitor.isNativePlatform === 'function'
-                && window.Capacitor.isNativePlatform();
         }
 
         function isLikelyMobile() {
