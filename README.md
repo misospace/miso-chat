@@ -55,19 +55,10 @@ docker run -d --name miso-chat \
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
 | `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
 | `CAPACITOR_COOKIES_ENABLED` | No | `true` | Enable Capacitor cookie bridge for native app builds |
-| `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Enable browser push notification configuration |
-| `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key exposed to clients |
-| `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | Private VAPID key used server-side |
-| `PUSH_VAPID_SUBJECT` | If push enabled | - | Contact URI for VAPID claims (for example `mailto:admin@example.com`) |
-| `GATEWAY_ADMIN_SCOPES` | No | `false` | Opt-in for admin/pairing gateway scopes (`true` enables `operator.admin` and `operator.pairing`; default is least-privilege) |
-
-Generate VAPID keys with:
-
-```bash
-npx web-push generate-vapid-keys
-```
-
-When `PUSH_NOTIFICATIONS_ENABLED=true`, startup now fails fast if any required `PUSH_VAPID_*` variable is missing.
+| `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Reserved for future browser push support (production web-push NOT implemented) |
+| `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key (reserved for future implementation) |
+| `PUSH_VAPID_PRIVATE_KEY` | If push enabled | - | Private VAPID key (reserved for future implementation) |
+| `PUSH_VAPID_SUBJECT` | If push enabled | - | Contact URI for VAPID claims (reserved for future implementation) |
 
 ## Gateway Scope Model
 
@@ -129,12 +120,14 @@ For native APK builds, session persistence depends on cookie handling between th
 
 ## Background Notifications
 
-Browser notifications are available when the tab is in the background.
+Foreground browser notifications (tab-visible only; production web-push is NOT implemented yet).
 
 - Open the top-right menu (`☰`) and toggle **Alerts** on.
 - The app will ask for browser notification permission once.
 - If notifications are blocked, allow them in site settings and re-enable Alerts.
 
+> **Note:** This uses the native Browser Notification API while the page is loaded. Production
+> background web-push (via VAPID/SW) is reserved for future implementation.
 ## Testing
 
 ### Post-Deploy Smoke Check

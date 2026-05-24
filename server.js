@@ -1743,7 +1743,7 @@ async function startServer() {
   const gatewayDeviceIdentityPath = GATEWAY_DEVICE_IDENTITY_PATH;
   const defaultSessionKey = DEFAULT_SESSION_KEY;
   const pushNotificationsEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
-  const pushConfigReady = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.PUSH_SUBJECT;
+  const pushConfigReady = (process.env.PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY) && (process.env.PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY) && (process.env.PUSH_VAPID_SUBJECT || process.env.PUSH_SUBJECT);
 
   console.log(`
 🎉 miso-chat v${APP_VERSION} server running on port ${PORT}
