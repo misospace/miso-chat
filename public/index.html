@@ -1262,12 +1262,6 @@
         };
         let pendingAttachment = null;
 
-        function isNativeCapacitor() {
-            return typeof window.Capacitor !== 'undefined'
-                && typeof window.Capacitor.isNativePlatform === 'function'
-                && window.Capacitor.isNativePlatform();
-        }
-
         function getSecureStoragePlugin() {
             if (!isNativeCapacitor()) return null;
             const plugins = window.Capacitor?.Plugins;
@@ -1369,7 +1363,7 @@
             await persistStoredSessionKey(null);
         }
 
-       const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
+         const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
         const TABLE_REGEX = /\|[^\n]+\|\n\|[-:|\s]+\|\n((?:\|[^\n]+\|\n?)+)/g;
         const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
         const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
@@ -2106,6 +2100,12 @@
             saveReactions(messageReactions);
             syncReactionRows(key);
             return true;
+        }
+
+        function isNativeCapacitor() {
+            return typeof window.Capacitor !== 'undefined'
+                && typeof window.Capacitor.isNativePlatform === 'function'
+                && window.Capacitor.isNativePlatform();
         }
 
         function isLikelyMobile() {
