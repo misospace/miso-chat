@@ -27,7 +27,7 @@ jobs:
 
       - name: Generate bot token
         id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -35,7 +35,7 @@ jobs:
       - name: Review PR with reusable AI reviewer
         if: github.event_name == 'pull_request'
         id: review
-        uses: misospace/pr-reviewer-action@56e130feaafcb42c7adcb2d5cbabf42020ceb043 # v1.0.15
+        uses: misospace/pr-reviewer-action@f838c5b49d72d11dd33cfee6e29b85a28b5aa8df # v1.0.18
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           ai_primary_retries: '8'
@@ -60,4 +60,5 @@ jobs:
           tool_failure_enforcement: 'true'
           tool_min_successful_requests: '1'
           tool_enable_for_forks: 'false'
-          publish_review_comment: 'true'
+          publish_mode: review_verdict
+          allow_approve: 'true'
