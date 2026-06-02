@@ -83,7 +83,10 @@ const MOBILE_UPDATE_REPO_OWNER = process.env.MOBILE_UPDATE_REPO_OWNER || "misosp
 const MOBILE_UPDATE_REPO_NAME = process.env.MOBILE_UPDATE_REPO_NAME || "miso-chat";
 const MOBILE_UPDATE_GITHUB_API_URL = "https://api.github.com";
 const MOBILE_UPDATE_CACHE_TTL_MS = Number(process.env.MOBILE_UPDATE_CACHE_TTL_MS || 300000); // 5 min default
-// In-memory cache: process-level only (not shared across multiple server instances behind LB)
+// In-memory cache: process-level only (not shared across multiple server instances behind LB).
+// Each instance maintains its own mobileUpdateCache and TTL independently, so multi-instance
+// deployments can serve stale manifests for up to MOBILE_UPDATE_CACHE_TTL_MS (default 5 min).
+// For multi-instance deployments, consider using a Redis-backed cache for this path.
 let mobileUpdateCache = null;
 let mobileUpdateCacheTime = 0;
 
