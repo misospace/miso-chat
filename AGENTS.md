@@ -21,21 +21,23 @@
 4. Gateway responds with connect ACK → connection established
 
 ### Release Process
-miso-chat uses GitHub Actions for release automation. The `Manual Release` workflow (`.github/workflows/manual-release.yml`) handles the full release pipeline.
+miso-chat uses GitHub Actions for release automation. The `Manual Release` workflow (`.github/workflows/manual-release.yml`) handles version bump, git push (via bot token that bypasses branch protection), tag, and release creation in one shot.
 
 #### Steps (preferred: GitHub Actions Manual Release)
 
-1. Go to **Actions → Manual Release → Run workflow**
-2. Enter the version (e.g. `0.4.12`; `v` prefix is accepted and normalized)
-3. The workflow handles: version bump → commit → tag → release creation with auto-generated notes
-4. The `Release Build & Verify` workflow (`.github/workflows/release.yaml`) triggers on the published release and runs regression tests + auth-required smoke tests
+Go to **Actions → Manual Release → Run workflow**, enter the version (e.g. `0.4.12`; `v` prefix is accepted and normalized).
 
-#### Steps (CLI — for when Actions is unavailable)
+The workflow handles the full sequence: version bump → commit to main (via bot token) → tag → release with auto-generated notes. The `Release Build & Verify` workflow (`.github/workflows/release.yaml`) then triggers on the published release and runs regression tests + auth smoke check.
+
+#### Steps (CLI — branch-protection-safe fallback)
 
 ```bash
 # Ensure main is up-to-date
 git checkout main
 git pull --ff-only --tags origin main
+
+# Branch for the version bump
+git checkout -b chore/release-v<version>
 
 # Bump version
 npm version <version> --no-git-tag-version --allow-same-version
@@ -45,22 +47,24 @@ npm run lint
 npm run test:ci
 npm run release:readiness
 
-# Commit and tag
+# Commit and push branch
 git add package.json package-lock.json
 git commit -m "chore(release): bump version to <version>"
-git push origin HEAD:main
+git push -u origin chore/release-v<version>
 
+# Open PR and squash-merge
+gh pr create --repo misospace/miso-chat --base main --head chore/release-v<version>   --title "chore(release): bump version to <version>"   --body "Version bump for release v<version>."
+gh pr merge --repo misospace/miso-chat --squash --delete-branch
+
+# After PR merge, tag and publish
+git checkout main
+git pull --ff-only --tags origin main
 git tag <version>
 git push origin <version>
 
 # Create release
-gh release create <version> \
-  --repo misospace/miso-chat \
-  --title "<version>" \
-  --generate-notes
+gh release create <version> --repo misospace/miso-chat --title "<version>" --generate-notes
 ```
-
-The tag push triggers the `Release Build & Verify` workflow: regression tests + auth-required smoke tests.
 
 #### Version source of truth
 
@@ -69,7 +73,7 @@ The tag push triggers the `Release Build & Verify` workflow: regression tests + 
 
 #### Validation gates
 
-Before pushing a release:
+Before opening the version bump PR:
 - `npm run lint` — syntax check all JS files
 - `npm run test:ci` — all regression tests pass
 - `npm run release:readiness` — image exists check + deploy smoke test
