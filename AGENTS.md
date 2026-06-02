@@ -21,9 +21,61 @@
 4. Gateway responds with connect ACK → connection established
 
 ### Release Process
-- Tags use plain semver (e.g., `0.4.6`, no `v` prefix)
-- Version in `package.json` is source of truth
-- Prefer manual release workflow over ad-hoc tagging
+miso-chat uses GitHub Actions for release automation. The `Manual Release` workflow (`manual-release.yml`) handles the full release pipeline.
+
+#### Steps (preferred: GitHub Actions Manual Release)
+
+1. Go to **Actions → Manual Release → Run workflow**
+2. Enter the version (e.g. `0.4.12`; `v` prefix is accepted and normalized)
+3. The workflow handles: version bump → commit → tag → release creation with auto-generated notes
+4. The `Release Build & Verify` workflow triggers on the published release and runs auth smoke tests
+
+#### Steps (CLI — for when Actions is unavailable)
+
+```bash
+# Ensure main is up-to-date
+git checkout main
+git pull --ff-only --tags origin main
+
+# Bump version
+npm version <version> --no-git-tag-version --allow-same-version
+
+# Validate
+npm run lint
+npm run typecheck
+npm run test:ci
+npm run build
+
+# Commit and tag
+git add package.json package-lock.json
+git commit -m "chore(release): bump version to <version>"
+git push origin HEAD:main
+
+git tag <version>
+git push origin <version>
+
+# Create release
+gh release create <version> \
+  --repo joryirving/miso-chat \
+  --title "<version>" \
+  --generate-notes
+```
+
+The tag push triggers the `Release Build & Verify` workflow: regression tests + auth-required smoke tests.
+
+#### Version source of truth
+
+- `package.json` is canonical
+- Tags use plain semver (e.g. `0.4.12`, no `v` prefix)
+
+#### Validation gates
+
+Before pushing a release:
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test:ci` (all regression tests pass)
+- `npm run build` (production build succeeds)
+
 
 ## Guidelines
 
