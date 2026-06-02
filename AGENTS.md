@@ -21,14 +21,14 @@
 4. Gateway responds with connect ACK → connection established
 
 ### Release Process
-miso-chat uses GitHub Actions for release automation. The `Manual Release` workflow (`manual-release.yml`) handles the full release pipeline.
+miso-chat uses GitHub Actions for release automation. The `Manual Release` workflow (`.github/workflows/manual-release.yml`) handles the full release pipeline.
 
 #### Steps (preferred: GitHub Actions Manual Release)
 
 1. Go to **Actions → Manual Release → Run workflow**
 2. Enter the version (e.g. `0.4.12`; `v` prefix is accepted and normalized)
 3. The workflow handles: version bump → commit → tag → release creation with auto-generated notes
-4. The `Release Build & Verify` workflow triggers on the published release and runs auth smoke tests
+4. The `Release Build & Verify` workflow (`.github/workflows/release.yaml`) triggers on the published release and runs regression tests + auth-required smoke tests
 
 #### Steps (CLI — for when Actions is unavailable)
 
@@ -42,9 +42,8 @@ npm version <version> --no-git-tag-version --allow-same-version
 
 # Validate
 npm run lint
-npm run typecheck
 npm run test:ci
-npm run build
+npm run release:readiness
 
 # Commit and tag
 git add package.json package-lock.json
@@ -56,7 +55,7 @@ git push origin <version>
 
 # Create release
 gh release create <version> \
-  --repo joryirving/miso-chat \
+  --repo misospace/miso-chat \
   --title "<version>" \
   --generate-notes
 ```
@@ -71,10 +70,9 @@ The tag push triggers the `Release Build & Verify` workflow: regression tests + 
 #### Validation gates
 
 Before pushing a release:
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test:ci` (all regression tests pass)
-- `npm run build` (production build succeeds)
+- `npm run lint` — syntax check all JS files
+- `npm run test:ci` — all regression tests pass
+- `npm run release:readiness` — image exists check + deploy smoke test
 
 
 ## Guidelines
