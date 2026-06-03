@@ -21,9 +21,61 @@
 4. Gateway responds with connect ACK → connection established
 
 ### Release Process
-- Tags use plain semver (e.g., `0.4.6`, no `v` prefix)
-- Version in `package.json` is source of truth
-- Prefer manual release workflow over ad-hoc tagging
+The release process is manual and CLI-driven. Branch protection blocks direct pushes to `main`, so all version bumps go through a branch + PR.
+
+#### Steps
+
+```bash
+# Ensure main is up-to-date
+git checkout main
+git pull --ff-only --tags origin main
+
+# Branch for the version bump
+git checkout -b chore/release-v<version>
+
+# Bump version
+npm version <version> --no-git-tag-version --allow-same-version
+
+# Validate
+npm run lint
+npm run test:ci
+
+# Commit and push branch
+git add package.json package-lock.json
+git commit -m "chore(release): bump version to <version>"
+git push -u origin chore/release-v<version>
+
+# Open PR and squash-merge (remove branch protection if needed, or use a bot token)
+gh pr create --repo misospace/miso-chat --base main --head chore/release-v<version> \
+  --title "chore(release): bump version to <version>" \
+  --body "Version bump for release v<version>."
+
+# Merge the PR
+gh pr merge --repo misospace/miso-chat --squash --delete-branch
+
+# After PR merge, tag from up-to-date main
+git checkout main
+git pull --ff-only --tags origin main
+git tag <version>
+git push origin <version>
+
+# Create release
+gh release create <version> --repo misospace/miso-chat --title "<version>" --generate-notes
+```
+
+The tag push triggers `Release Build & Verify` (`.github/workflows/release.yaml`): regression tests + auth smoke check.
+
+#### Version source of truth
+
+- `package.json` is canonical
+- Tags use plain semver (e.g. `0.4.12`, no `v` prefix)
+
+#### Validation gates
+
+Before opening the version bump PR:
+- `npm run lint` — syntax check all JS files
+- `npm run test:ci` — all regression tests pass
+
 
 ## Guidelines
 
