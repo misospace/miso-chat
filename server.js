@@ -22,6 +22,7 @@ const { reactions } = require('./lib/db');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 
 const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
+const { validateManifest } = require('./lib/mobile-manifest-validator');
 
 const app = express();
 const server = http.createServer(app);
@@ -810,7 +811,7 @@ app.post('/api/mobile-auth/consume', (req, res) => {
   });
 });
 
-// GET /api/mobile/update-manifest - Serve update manifest from latest GitHub release
+// GET /api/mobile/update-manifest - Serve update manifest from latest GitHub release (hardened)
 app.get("/api/mobile/update-manifest", async (req, res) => {
   const now = Date.now();
   if (
@@ -839,6 +840,18 @@ app.get("/api/mobile/update-manifest", async (req, res) => {
       return res.status(manifestResp.status).json({ error: "Failed to fetch update manifest" });
     }
     const manifest = await manifestResp.json();
+
+    // Validate manifest before serving — schema, tag consistency, asset host trust
+    const validation = validateManifest(manifest, {
+      releaseTagName: release.tag_name,
+      repoOwner: MOBILE_UPDATE_REPO_OWNER,
+      repoName: MOBILE_UPDATE_REPO_NAME,
+    });
+    if (!validation.valid) {
+      console.error("Mobile update manifest validation failed:", validation.errors);
+      return res.status(400).json({ error: "Invalid update manifest", details: validation.errors });
+    }
+
     mobileUpdateCache = manifest;
     mobileUpdateCacheTime = now;
     return res.json(manifest);
