@@ -18,6 +18,8 @@
     <!-- OTA Update Manager -->
     <script src="/mobile/update-manager.js"></script>
     <!-- Extracted rendering utilities (shared with tests) -->
+    <!-- Capacitor native-platform detection (shared across index.html and browser modules) -->
+    <script src="/lib/capacitor-detect.js"></script>
     <script src="/lib/render-utils.js"></script>
     <!-- Reaction event parsing (mirrors lib/reaction-events.js for browser) -->
     <script src="/lib/reaction-events-browser.js"></script>
@@ -2102,11 +2104,6 @@
             return true;
         }
 
-        function isNativeCapacitor() {
-            return typeof window.Capacitor !== 'undefined'
-                && typeof window.Capacitor.isNativePlatform === 'function'
-                && window.Capacitor.isNativePlatform();
-        }
 
         function isLikelyMobile() {
             return isNativeCapacitor()
