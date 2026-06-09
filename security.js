@@ -85,6 +85,11 @@ function getServerOrigin(req) {
 function generateNonce() {
   return crypto.randomBytes(16).toString('base64');
 }
+/**
+ * NOTE: CSP is no longer a static CONTENT_SECURITY_POLICY constant.
+ * It is now set dynamically in securityHeaders() with per-request nonces,
+ * which is more secure (prevents script injection even if nonce source leaks).
+ */
 
 // ---------------------------------------------------------------------------
 // CSRF Token system — route-level per-session tokens for browser clients.
@@ -113,6 +118,19 @@ function isBrowserRequest(req) {
   return Boolean(origin || referer);
 }
 
+/**
+ * Frontend integration notes:
+ * - The frontend MUST fetch a fresh CSRF token on page load via GET /api/csrf-token.
+ * - The frontend MUST include the token in the X-CSRF-Token header for all
+ *   state-changing browser requests (POST/PUT/PATCH/DELETE).
+ * - After each successful state-changing request, the server rotates the token.
+ *   The frontend should either:
+ *   (a) Fetch a new token before each state-changing request, or
+ *   (b) Handle 403 responses by fetching a fresh token and retrying.
+ * - Non-browser callers (mobile apps, API clients) are exempt — they use other auth.
+ * - If no csrfToken exists in the session yet (e.g., before first /api/csrf-token call),
+ *   the check is skipped to avoid blocking unauthenticated requests.
+ */
 /**
  * CSRF token validation middleware for state-changing requests from browsers.
  *
