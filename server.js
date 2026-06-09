@@ -19,6 +19,7 @@ require('dotenv').config();
 const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
+const { requireSessionOwnership } = require('./lib/session-auth');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 
 const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
@@ -1229,7 +1230,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
   }
 });
 
-app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
+app.get('/api/sessions/:key/history', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
   try {
     const sessionKey = String(req.params.key || '').trim();
     if (!sessionKey) {
@@ -1281,7 +1282,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
   }
 });
 
-app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
+app.post('/api/sessions/:key/send', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
   try {
     const sessionKey = String(req.params.key || '').trim();
     const text = String(req.body?.text || req.body?.message || '').trim();
@@ -1322,7 +1323,7 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
   }
 });
 
-app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => {
+app.post('/api/sessions/:key/send-stream', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
   try {
     const sessionKey = String(req.params.key || '').trim();
     const text = String(req.body?.text || req.body?.message || '').trim();
@@ -1470,7 +1471,7 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/openclaw-status - Return native OpenClaw session status card/details
-app.get('/api/openclaw-status', isAuthenticated, async (req, res) => {
+app.get('/api/openclaw-status', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
   try {
     const sessionKey = typeof req.query.sessionKey === 'string' && req.query.sessionKey.trim()
       ? req.query.sessionKey.trim()
@@ -1496,7 +1497,7 @@ app.get('/api/openclaw-status', isAuthenticated, async (req, res) => {
 });
 
 // POST /api/openclaw-stop - Abort current OpenClaw chat run for a session
-app.post('/api/openclaw-stop', isAuthenticated, async (req, res) => {
+app.post('/api/openclaw-stop', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
   try {
     const sessionKey = typeof req.body?.sessionKey === 'string' && req.body.sessionKey.trim()
       ? req.body.sessionKey.trim()
@@ -1621,7 +1622,7 @@ function inferAgentNameFromKey(sessionKey) {
 // ============ REACTION API ENDPOINTS ============
 
 // GET /api/reactions/:sessionKey - Get all reactions for a session (batch load)
-app.get('/api/reactions/:sessionKey', isAuthenticated, (req, res) => {
+app.get('/api/reactions/:sessionKey', isAuthenticated, requireSessionOwnership(authMode), (req, res) => {
   try {
     const { sessionKey } = req.params;
     const allReactions = reactions.getForSession(sessionKey);
@@ -1633,7 +1634,7 @@ app.get('/api/reactions/:sessionKey', isAuthenticated, (req, res) => {
 });
 
 // GET /api/messages/:messageId/reactions - Get reactions for a specific message
-app.get('/api/messages/:messageId/reactions', isAuthenticated, (req, res) => {
+app.get('/api/messages/:messageId/reactions', isAuthenticated, requireSessionOwnership(authMode), (req, res) => {
   try {
     const { messageId } = req.params;
     const sessionKey = typeof req.query?.sessionKey === 'string' ? req.query.sessionKey : null;
@@ -1646,7 +1647,7 @@ app.get('/api/messages/:messageId/reactions', isAuthenticated, (req, res) => {
 });
 
 // POST /api/messages/:messageId/reactions - Add or remove a reaction (toggle)
-app.post('/api/messages/:messageId/reactions', isAuthenticated, (req, res) => {
+app.post('/api/messages/:messageId/reactions', isAuthenticated, requireSessionOwnership(authMode), (req, res) => {
   try {
     const { messageId } = req.params;
     const { emoji, sessionKey } = req.body;
