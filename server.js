@@ -873,6 +873,14 @@ app.get('/api/auth', (req, res) => res.json({
   requiresAuth: authMode !== 'none',
 }));
 
+
+// GET /api/csrf-token — Return current per-session CSRF token (generate if missing).
+app.get('/api/csrf-token', isAuthenticated, (req, res) => {
+  const { generateCsrfToken } = require('./security');
+  const token = generateCsrfToken(req);
+  return res.json({ csrfToken: token });
+});
+
 let gatewayWsLastError = '';
 let gatewayWsLastClose = null;
 const GATEWAY_WS_CLIENT_ID = process.env.GATEWAY_WS_CLIENT_ID || 'webchat-ui';
