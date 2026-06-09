@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const [securityHeaders, csrfOriginCheck] = require('../security');
+// security.js exports [securityHeaders, csrfTokenCheck, csrfOriginCheck]
+const [securityHeaders, , csrfOriginCheck] = require('../security');
 
 function createResponseMock() {
   const headers = {};

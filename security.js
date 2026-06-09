@@ -1,5 +1,6 @@
 // Lightweight security middleware for miso-chat.
-// Provides baseline security headers + CSRF origin checks for state-changing requests.
+// Provides baseline security headers + per-session CSRF tokens + origin checks
+// for state-changing browser requests.
 
 const crypto = require('crypto');
 
@@ -58,18 +59,6 @@ function loadAllowedOrigins() {
 
 const allowedOrigins = loadAllowedOrigins();
 
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "img-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline'",
-  "connect-src 'self' ws: wss:",
-  "form-action 'self'",
-].join('; ');
-
 function getRequestOrigin(req) {
   const origin = normalizeOrigin(req.get('origin'));
   if (origin) return origin;
@@ -95,6 +84,93 @@ function getServerOrigin(req) {
 
 function generateNonce() {
   return crypto.randomBytes(16).toString('base64');
+}
+
+// ---------------------------------------------------------------------------
+// CSRF Token system — route-level per-session tokens for browser clients.
+// ---------------------------------------------------------------------------
+
+const CSRF_TOKEN_LENGTH = 32; // bytes → 64 hex chars
+
+/**
+ * Generate a cryptographically random CSRF token and store it in the session.
+ * Returns the token string.
+ */
+function generateCsrfToken(req) {
+  if (!req.session) return null;
+  const token = crypto.randomBytes(CSRF_TOKEN_LENGTH).toString('hex');
+  req.session.csrfToken = token;
+  return token;
+}
+
+/**
+ * Check whether a request appears to be from a browser (has Origin or Referer).
+ * Non-browser callers (mobile apps, API clients) typically omit these headers.
+ */
+function isBrowserRequest(req) {
+  const origin = req.get('origin');
+  const referer = req.get('referer');
+  return Boolean(origin || referer);
+}
+
+/**
+ * CSRF token validation middleware for state-changing requests from browsers.
+ *
+ * - Skipped entirely for non-browser callers (no Origin/Referer) — they use
+ *   other auth mechanisms (session cookies, mobile auth tokens, etc.).
+ * - For browser requests on POST/PUT/PATCH/DELETE, requires the `X-CSRF-Token`
+ *   header to match the current per-session token.
+ * - On success, rotates the token (old token is invalidated).
+ */
+function csrfTokenCheck(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+
+  // Skip CSRF check for non-browser callers (mobile apps, API clients, etc.).
+  // These use session cookies or mobile auth tokens as their primary auth.
+  if (!isBrowserRequest(req)) {
+    return next();
+  }
+
+  // Must have a session to validate CSRF tokens.
+  if (!req.session || !req.session.csrfToken) {
+    return next();
+  }
+
+  const providedToken = String(req.get('x-csrf-token') || '').trim();
+
+  if (!providedToken) {
+    return res.status(403).json({
+      error: 'Forbidden: CSRF token required',
+      detail: 'State-changing browser requests require an X-CSRF-Token header.',
+    });
+  }
+
+  // Constant-time comparison to prevent timing attacks.
+  const expected = req.session.csrfToken;
+  if (providedToken.length !== expected.length) {
+    return res.status(403).json({
+      error: 'Forbidden: invalid CSRF token',
+    });
+  }
+
+  let match = true;
+  for (let i = 0; i < providedToken.length; i++) {
+    // eslint-disable-next-line no-bitwise
+    match &= providedToken.charCodeAt(i) === expected.charCodeAt(i);
+  }
+
+  if (!match) {
+    return res.status(403).json({
+      error: 'Forbidden: invalid CSRF token',
+    });
+  }
+
+  // Rotate the token after successful validation.
+  req.session.csrfToken = crypto.randomBytes(CSRF_TOKEN_LENGTH).toString('hex');
+
+  next();
 }
 
 function securityHeaders(req, res, next) {
@@ -140,4 +216,5 @@ function csrfOriginCheck(req, res, next) {
   });
 }
 
-module.exports = [securityHeaders, csrfOriginCheck];
+module.exports = [securityHeaders, csrfTokenCheck, csrfOriginCheck];
+module.exports.generateCsrfToken = generateCsrfToken;
