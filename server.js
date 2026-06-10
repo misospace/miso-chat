@@ -116,6 +116,8 @@ const linkPreviewCoalescer = new PreviewCoalescer();
 setInterval(() => {
   const removed = linkPreviewCache.cleanup();
   if (removed > 0) console.debug(`Link preview cache cleaned up ${removed} expired entries`);
+  const stats = linkPreviewCache.stats();
+  console.debug(`Link preview cache: ${stats.activeCount}/${stats.maxSize} active, ${stats.expiredCount} expired`);
 }, 60_000);
 
 // Mobile OTA update configuration
