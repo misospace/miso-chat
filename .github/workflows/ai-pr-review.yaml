@@ -35,10 +35,10 @@ jobs:
       - name: Review PR with reusable AI reviewer
         if: github.event_name == 'pull_request'
         id: review
-        uses: misospace/pr-reviewer-action@8f72b519d2aaa4824673f5f4cbaafb7aba299349 # v1.1.1
+        uses: misospace/pr-reviewer-action@ff03870002ecee692bfcfe9ad6e5dd1cb36f3ddd # v1.2.0
         with:
           github_token: ${{ steps.app-token.outputs.token }}
-          ai_primary_retries: "8"
+          ai_primary_retries: "3"
           ai_primary_retry_delay_sec: "15"
           ai_base_url: ${{ vars.LITELLM_URL }}
           ai_api_format: ${{ vars.PRIMARY_FORMAT }}
@@ -48,6 +48,11 @@ jobs:
           ai_fallback_api_format: ${{ vars.FALLBACK_FORMAT }}
           ai_fallback_model: ${{ vars.FALLBACK_MODEL }}
           ai_fallback_api_key: ${{ secrets.LITELLM_API_KEY }}
+          review_routing_mode: auto
+          ai_smart_base_url: ${{ vars.LITELLM_URL }}
+          ai_smart_api_format: ${{ vars.SMART_FORMAT || vars.FALLBACK_FORMAT }}
+          ai_smart_model: ${{ vars.SMART_MODEL || vars.FALLBACK_MODEL }}
+          ai_smart_api_key: ${{ secrets.LITELLM_API_KEY }}
           context_limit_mode: normal
           tool_mode: plan_execute_once
           tool_max_requests: "4"
@@ -58,5 +63,8 @@ jobs:
           tool_allowed_gh_api_repos: "*"
           tool_request_timeout_sec: "15"
           tool_enable_for_forks: "false"
+          on_model_failure: notice
+          inline_findings: "true"
+          verdict_policy: findings_severity_gated
           publish_mode: review_verdict
           allow_approve: "true"
