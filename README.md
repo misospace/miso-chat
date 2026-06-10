@@ -104,7 +104,7 @@ securityContext:
 npm install
 npm run dev    # Development
 npm run test   # Run tests
-npm run lint   # Lint
+npm run lint   # Lint (note: `npm run lint` runs `node --check server.js`; ESLint config exists but is not wired into the npm script)
 ```
 
 
@@ -221,10 +221,10 @@ manager.on('reconnect-failed', (err) => {
 ## Contributing & Releases
 
 ### Before Release Checklist
-- [ ] Update CHANGELOG.md with changes
+- [ ] Update inline changelog in README.md with changes
 - [ ] Update version in package.json
 - [ ] Ensure all tests pass (`npm test`)
-- [ ] Run linting (`npm run lint`)
+- [ ] Run linting (`npm run lint` — note: runs `node --check server.js`; ESLint config exists but is not wired into the npm script)
 - [ ] Check for security vulnerabilities (`npm audit`)
 - [ ] Verify README.md is current
 - [ ] Test WebSocket reconnection manually
@@ -235,18 +235,69 @@ manager.on('reconnect-failed', (err) => {
 
 ## Changelog
 
-### v0.3.0 (2026-03-01)
+### v0.4.13 (2026-06-04)
+- Added release runbook to AGENTS.md
+- Updated `@capgo/capacitor-updater` 8.47.5 → 8.47.6
+- Updated `actions/checkout` CI action v6.0.2 → v6.0.3
+
+### v0.4.12 (2026-04-30)
+- Updated gradle 9.4.1 → 9.5.0
+- Updated `@capgo/capacitor-updater` 8.45.9 → 8.45.10
+- Fixed README
+- Fixed WebSocket: infer `GATEWAY_WS_ORIGIN` from `CORS_ORIGIN` if not set
+
+### v0.4.11 (2026-04-27)
+- Dependency updates and maintenance releases
+
+### v0.4.10 (2026-04-04)
+- **Mobile**: Restored native onboarding and OTA affordance (#404)
+- **Chat**: Strip tool output from rendered history (#403)
+- **CI**: Added wishlist cron PR review workflow (#409)
+- **Chat**: Partial fix for live send sanitization (#407)
+
+### v0.4.6 (2026-03-30)
+- **OTA**: Integrated OTA update manager and added documentation (#354)
+- Updated `ws` 8.19.0 → 8.20.0
+- Updated TypeScript 5.9.3 → 6.0.2
+- Updated `@capgo/capacitor-updater` 8.43.11 → 8.45.0
+- Added retry controls for failed sends
+- Removed group chat UI and related flows (#373)
+- IPv6-safe rate-limit key generation
+- Clarified OpenClaw Gateway references in UI copy
+- Added regression contract coverage scaffold
+
+### v0.4.5 (2026-03-20)
+- Fixed mobile auth callback on cold app launch
+- Fixed debug overlay for mobile auth traces on web
+- Published web bundles to Capgo + enabled default auto updates
+- Updated `peter-evans/create-pull-request` action v7.0.11 → v8.1.0
+
+### v0.4.0 (2026-03-16)
+- **WebSocket**: Added reconnection with session state recovery (#310)
+- Fixed auto-login after logout — forces re-authentication (#313)
+- Added loading spinner for in-progress tool calls
+- Updated `@capgo/capacitor-updater` 8.43.10 → 8.43.11
+
+### v0.3.15 (2026-03-15)
+- Dependency updates and maintenance releases
+
+### v0.3.14 (2026-03-13)
+- Restored image embed functionality (#284)
+- Persisted mobile auth session before redirects (#283)
+- Added OG link preview cards (#285)
+- Updated `express-rate-limit` 8.3.0 → 8.3.1
+
+### v0.3.6 (2026-03-02)
 - **#125**: Add reaction counts like Discord - reactions now show count badges
 - **#126**: Add dark/light theme toggle with localStorage persistence
-- Improved WebSocket reconnection on errors
-- Fixed emoji picker background and positioning
-- Typing indicator now responds to gateway events only
+- Fixed Enter key adding new line instead of sending message
+- Added Capacitor Android setup
+
+### v0.3.0 (2026-03-01)
+- Initial release with reaction counts, theme toggle, WebSocket fixes, emoji picker improvements, and gateway-event-only typing indicator
 
 ### v0.2.0 (2026-02-28)
-- Initial release
-- OIDC authentication support
-- Real-time WebSocket chat
-- Mobile-friendly PWA UI
+- Pre-release build
 
 ## License
 
@@ -289,6 +340,21 @@ Miso Chat supports automatic over-the-air (OTA) updates for native mobile apps u
 - Native mobile app build (Android APK or iOS app)
 - Capacitor platform with `@capgo/capacitor-updater` plugin installed
 - GitHub release with `update-manifest.json` asset
+
+### Server-Served Update Manifest (v0.4.x+)
+
+The server provides a cached manifest endpoint so clients don't hit the GitHub API directly:
+
+```
+GET /api/mobile/update-manifest
+```
+
+The server fetches the `update-manifest.json` asset from the latest GitHub release, caches it for 5 minutes (configurable via `MOBILE_UPDATE_CACHE_TTL_MS`), and serves it to clients. Clients fall back to direct GitHub API lookup if the server endpoint is unavailable.
+
+Environment variables:
+- `MOBILE_UPDATE_REPO_OWNER` (default: `misospace`) — GitHub org for update releases
+- `MOBILE_UPDATE_REPO_NAME` (default: `miso-chat`) — GitHub repo for update releases
+- `MOBILE_UPDATE_CACHE_TTL_MS` (default: `300000`) — Cache TTL in milliseconds
 
 ### Manual Update Check
 
@@ -339,4 +405,3 @@ To publish an update, use the **Manual Release** GitHub Actions workflow and ent
 - Ensure the APK/IPA is properly signed
 - Check network connectivity
 - Verify the `update-manifest.json` contains valid `bundleUrl`
-
