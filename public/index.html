@@ -23,6 +23,8 @@
     <script src="/lib/render-utils.js"></script>
     <!-- Reaction event parsing (mirrors lib/reaction-events.js for browser) -->
     <script src="/lib/reaction-events-browser.js"></script>
+    <!-- Extracted API client & backend URL management -->
+    <script src="/lib/api-client.js"></script>
     
     <style>
         :root {
@@ -2111,85 +2113,6 @@
                 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
         }
 
-        function normalizeBaseUrl(value) {
-            const raw = String(value || '').trim();
-            if (!raw) return '';
-
-            const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-
-            try {
-                const parsed = new URL(withScheme);
-                if (!['http:', 'https:'].includes(parsed.protocol)) return '';
-                return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
-            } catch {
-                return '';
-            }
-        }
-
-        function getApiBaseUrl() {
-            const fromQuery = new URLSearchParams(window.location.search).get('backend');
-            if (fromQuery) {
-                const normalized = normalizeBaseUrl(fromQuery);
-                localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
-                updateNativeBuildMarker();
-                return normalized;
-            }
-            return normalizeBaseUrl(localStorage.getItem(API_BASE_STORAGE_KEY) || '');
-        }
-
-        function setApiBaseUrl(url) {
-            const normalized = normalizeBaseUrl(url);
-            if (normalized) localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
-            else localStorage.removeItem(API_BASE_STORAGE_KEY);
-            updateNativeBuildMarker();
-            return normalized;
-        }
-
-        function backendHealthUrl(baseUrl) {
-            return `${baseUrl}/api/health`;
-        }
-
-        async function testBackendConnection(baseUrl) {
-            const normalized = normalizeBaseUrl(baseUrl);
-            if (!normalized) {
-                return { ok: false, message: `Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}` };
-            }
-
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8000);
-
-            try {
-                const response = await fetch(backendHealthUrl(normalized), {
-                    method: 'GET',
-                    credentials: 'include',
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        return { ok: false, message: 'Backend API not found (404). Check the backend URL.' };
-                    }
-                    if (response.status >= 500) {
-                        return { ok: false, message: 'Backend unavailable (5xx). Server responded with an error.' };
-                    }
-                    return { ok: false, message: `Connection test failed (${response.status}).` };
-                }
-
-                return { ok: true, message: `Connection OK: ${normalized}` };
-            } catch (error) {
-                const message = String(error?.message || '').toLowerCase();
-                if (error?.name === 'AbortError') {
-                    return { ok: false, message: 'Connection test timed out after 8 seconds.' };
-                }
-                if (message.includes('failed to fetch') || message.includes('network')) {
-                    return { ok: false, message: `Backend unreachable (${normalized}). Check URL, network, or certificate.` };
-                }
-                return { ok: false, message: `Connection test failed: ${error?.message || 'unknown error'}` };
-            } finally {
-                clearTimeout(timeout);
-            }
-        }
-
         async function reconnectToBackendWithStatus() {
             stopHistoryPolling();
             if (eventSource) {
@@ -2205,108 +2128,6 @@
             await refreshBackendHealth();
         }
 
-        async function openBackendSettings() {
-            const current = getApiBaseUrl();
-            const entered = window.prompt(
-                `Backend URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`,
-                current || SANITIZED_SERVER_EXAMPLE_URL,
-            );
-            if (entered === null) return;
-
-            const normalized = normalizeBaseUrl(entered);
-            if (!normalized) {
-                window.alert(`Invalid backend URL. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
-                return;
-            }
-
-            const result = await testBackendConnection(normalized);
-            const save = window.confirm(`${result.ok ? '✅' : '❌'} ${result.message}\n\nSave this backend URL?`);
-            if (!save) return;
-
-            setApiBaseUrl(normalized);
-            await reconnectToBackendWithStatus();
-        }
-
-        function apiUrl(path) {
-            const base = getApiBaseUrl();
-            if (!base) return path;
-            return `${base}${path}`;
-        }
-
-        function loginReturnToUrl() {
-            const backend = getApiBaseUrl();
-            if (isLikelyMobile()) {
-                const appReturn = new URL('misochat://auth/callback');
-                if (backend) {
-                    appReturn.searchParams.set('backend', backend);
-                }
-                return appReturn.toString();
-            }
-
-            const current = new URL(window.location.href);
-            if (backend) {
-                current.searchParams.set('backend', backend);
-            }
-            return current.toString();
-        }
-
-        function loginUrl() {
-            const target = new URL(apiUrl('/login'), window.location.href);
-            target.searchParams.set('return_to', loginReturnToUrl());
-            if (isLikelyMobile()) {
-                target.searchParams.set('mobile', '1');
-            }
-            return target.toString();
-        }
-
-        function oidcUrl() {
-            const target = new URL(apiUrl('/auth/oidc'), window.location.href);
-            target.searchParams.set('return_to', loginReturnToUrl());
-            target.searchParams.set('mobile', '1');
-            return target.toString();
-        }
-
-        async function startAuthFlow() {
-            const url = isNativeCapacitor() ? oidcUrl() : loginUrl();
-            if (isNativeCapacitor()) {
-                const browser = window.Capacitor?.Plugins?.Browser;
-                if (browser && typeof browser.open === 'function') {
-                    await browser.open({ url });
-                    return;
-                }
-            }
-            window.location.assign(url);
-        }
-
-        let mobileAuthInFlight = false;
-        let mobileAuthSettledAt = 0;
-
-        async function handleAuthRequired() {
-            if (mobileAuthInFlight) {
-                throw new Error('Authentication pending');
-            }
-            const justSettled = mobileAuthSettledAt && (Date.now() - mobileAuthSettledAt) < 4000;
-            if (justSettled) {
-                throw new Error('Authentication settling');
-            }
-            await startAuthFlow();
-            throw new Error('Authentication required');
-        }
-
-        async function apiFetch(path, options = undefined) {
-            const response = await fetch(apiUrl(path), {
-                credentials: 'include',
-                ...options,
-            });
-
-            if (response.status === 401) {
-                await handleAuthRequired();
-            }
-
-            return response;
-        }
-
-        const SANITIZED_SERVER_EXAMPLE_URL = 'https://miso-chat.example.com';
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
@@ -2327,7 +2148,7 @@
                     continue;
                 }
 
-                const result = await verifyBackendUrl(normalized);
+                const result = await testBackendConnection(normalized);
                 if (!result.ok) {
                     window.alert(result.message || 'Backend verification failed. Please try again.');
                     continue;
