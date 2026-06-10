@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "lint": "node --check server.js",
+    "lint": "npx eslint server.js security.js lib/ tests/",
     "test": "node --check server.js && node --test tests/*.test.js",
     "test:ci": "NODE_OPTIONS='--test-reporter=tap' npm test > test-results.json 2>&1",
     "release:readiness": "./scripts/release-readiness-check.sh",
