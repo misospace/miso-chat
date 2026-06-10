@@ -567,6 +567,14 @@ function consumeMobileAuthToken(token) {
   return entry.user;
 }
 
+
+// Cleanup expired mobile auth tokens every 60 seconds.
+// Note: In low-traffic deployments, expired tokens may linger for up to 60s
+// after their MOBILE_AUTH_TTL_MS (default 2 min) expires. This is acceptable
+// because consumeMobileAuthToken() rejects expired tokens on access, and the
+// unref() call ensures this interval won't prevent the process from exiting.
+// See misospace/miso-chat#530 for audit context.
+
 setInterval(() => {
   const now = Date.now();
   for (const [token, entry] of mobileAuthHandoffs.entries()) {
