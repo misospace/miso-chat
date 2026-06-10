@@ -35,7 +35,7 @@ jobs:
       - name: Review PR with reusable AI reviewer
         if: github.event_name == 'pull_request'
         id: review
-        uses: misospace/pr-reviewer-action@e891235e8e3e75824b88fb696b1f7b4816122737 # v1.2.2
+        uses: misospace/pr-reviewer-action@59c7a0596b0d0b515ef9137f7acb985115f4c1d8 # v1.2.3
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           ai_primary_retries: "3"
@@ -51,11 +51,12 @@ jobs:
           ai_fallback_api_key: ${{ secrets.LITELLM_API_KEY }}
           review_routing_mode: auto
           ai_smart_base_url: ${{ vars.LITELLM_URL }}
-          ai_smart_api_format: ${{ vars.SMART_FORMAT || vars.FALLBACK_FORMAT }}
-          ai_smart_model: ${{ vars.SMART_MODEL || vars.FALLBACK_MODEL }}
+          ai_smart_api_format: ${{ vars.SMART_FORMAT }}
+          ai_smart_model: ${{ vars.SMART_MODEL }}
           ai_smart_api_key: ${{ secrets.LITELLM_API_KEY }}
           context_limit_mode: normal
-          tool_mode: plan_execute_once
+          tool_mode: plan_execute_loop
+          tool_max_rounds: "2"
           tool_max_requests: "4"
           tool_planning_timeout_sec: "45"
           tool_planning_max_context_bytes: "15000"
