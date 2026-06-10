@@ -3,8 +3,11 @@
  *
  * Uses @capgo/capacitor-updater in manual mode with release artifacts.
  * No Capgo account/API key required.
+ *
+ * This is the single supported update path for mobile clients.
+ * See lib/update-manager.js (server-side metadata helper) for reference.
+ * Stale APK-based update logic has been removed from the server module.
  */
-
 (function(window) {
   'use strict';
 
