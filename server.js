@@ -371,6 +371,13 @@ const sessionCookieSameSite = parseSameSiteEnv(
   oidcEnabled ? 'lax' : 'strict'
 );
 
+const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN || undefined;
+
+if (sessionCookieDomain && sessionCookieDomain.startsWith('.')) {
+  console.warn('⚠️ SESSION_COOKIE_DOMAIN is set to a wildcard domain. ' +
+    'Session cookies will be sent to all subdomains.');
+}
+
 if (sessionCookieSameSite === 'none' && !sessionCookieSecure) {
   console.warn('⚠️ SESSION_COOKIE_SAMESITE=none without secure cookies may be rejected by modern browsers');
 }
@@ -386,6 +393,9 @@ const sessionConfig = {
     // On mobile/WebView deployments that use an app origin, set SESSION_COOKIE_SAMESITE=none.
     sameSite: sessionCookieSameSite,
     maxAge: 24 * 60 * 60 * 1000,
+    // Optional domain for subdomain isolation (e.g., ".example.com").
+    // When unset, cookie is host-only (default). Not recommended unless needed.
+    domain: sessionCookieDomain,
   },
 };
 
