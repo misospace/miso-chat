@@ -375,6 +375,16 @@ if (sessionCookieSameSite === 'none' && !sessionCookieSecure) {
   console.warn('⚠️ SESSION_COOKIE_SAMESITE=none without secure cookies may be rejected by modern browsers');
 }
 
+// Optional: set a domain for cross-subdomain session sharing.
+// Default is undefined (host-only cookie), which is the safest default.
+const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN || undefined;
+if (sessionCookieDomain?.startsWith('.')) {
+  console.warn(
+    '⚠️ SESSION_COOKIE_DOMAIN is set to a wildcard domain. ' +
+      'Session cookies will be sent to all subdomains.',
+  );
+}
+
 const sessionConfig = {
   secret: sessionSecret,
   resave: false,
@@ -384,8 +394,11 @@ const sessionConfig = {
     httpOnly: true,
     // OIDC auth redirects are cross-site; Strict drops session cookie on callback and causes loops.
     // On mobile/WebView deployments that use an app origin, set SESSION_COOKIE_SAMESITE=none.
+    // For subdomain isolation, set SESSION_COOKIE_DOMAIN (e.g., ".example.com").
+    // When unset, cookies are host-only (default). Not recommended unless needed.
     sameSite: sessionCookieSameSite,
     maxAge: 24 * 60 * 60 * 1000,
+    domain: sessionCookieDomain,
   },
 };
 
