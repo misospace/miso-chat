@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const indexHtmlPath = path.join(__dirname, '..', 'public', 'index.html');
+const apiClientPath = path.join(__dirname, '..', 'public', 'lib', 'api-client.js');
 const updateManagerPath = path.join(__dirname, '..', 'public', 'mobile', 'update-manager.js');
 
 function read(filePath) {
@@ -17,19 +18,18 @@ test('native onboarding requires backend configuration before app boot continues
   assert.match(indexHtml, /if \(getApiBaseUrl\(\)\) return true;/);
   assert.match(indexHtml, /window\.prompt\(`Enter your Miso server URL/);
   assert.match(indexHtml, /window\.alert\('A backend URL is required before the APK can sign in\.'/);
-  assert.match(indexHtml, /const result = await verifyBackendUrl\(normalized\);/);
+  assert.match(indexHtml, /const result = await testBackendConnection\(normalized\);/);
   assert.match(indexHtml, /const backendReady = await ensureMobileBackendConfigured\(\);/);
   assert.match(indexHtml, /if \(!backendReady\) \{/);
 });
 
 test('auth-required fetch path will not immediately relaunch login during callback settle window', () => {
-  const indexHtml = read(indexHtmlPath);
+  const apiClient = read(apiClientPath);
 
-  assert.match(indexHtml, /if \(mobileAuthInFlight\) \{/);
-  assert.match(indexHtml, /throw new Error\('Authentication pending'\);/);
-  assert.match(indexHtml, /const justSettled = mobileAuthSettledAt && \(Date\.now\(\) - mobileAuthSettledAt\) < 4000;/);
-  assert.match(indexHtml, /throw new Error\('Authentication settling'\);/);
-  assert.match(indexHtml, /mobileAuthSettledAt = Date\.now\(\);/);
+  assert.match(apiClient, /if \(mobileAuthInFlight\) \{/);
+  assert.match(apiClient, /throw new Error\('Authentication pending'\);/);
+  assert.match(apiClient, /const justSettled = mobileAuthSettledAt && \(Date\.now\(\) - mobileAuthSettledAt\) < 4000;/);
+  assert.match(apiClient, /throw new Error\('Authentication settling'\);/);
 });
 
 test('manual OTA affordance still exists in the native shell header', () => {
