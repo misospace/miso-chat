@@ -118,7 +118,7 @@ setInterval(() => {
   if (removed > 0) console.debug(`Link preview cache cleaned up ${removed} expired entries`);
   const stats = linkPreviewCache.stats();
   console.debug(`Link preview cache: ${stats.activeCount}/${stats.maxSize} active, ${stats.expiredCount} expired`);
-}, 60_000);
+}, 60_000).unref?.();
 
 // Mobile OTA update configuration
 const MOBILE_UPDATE_REPO_OWNER = process.env.MOBILE_UPDATE_REPO_OWNER || "misospace";
