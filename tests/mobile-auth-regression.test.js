@@ -6,6 +6,7 @@ const path = require('node:path');
 const loginHtmlPath = path.join(__dirname, '..', 'public', 'login.html');
 const indexHtmlPath = path.join(__dirname, '..', 'public', 'index.html');
 const serverJsPath = path.join(__dirname, '..', 'server.js');
+const authSessionPath = path.join(__dirname, '..', 'lib', 'auth-session.js');
 const androidManifestPath = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 
 function read(filePath) {
@@ -29,11 +30,11 @@ test('mobile callback flow still consumes temporary auth token and can recover',
 });
 
 test('auth flows persist session before redirect/response to avoid mobile login races', () => {
-  const serverJs = read(serverJsPath);
+  const authSessionJs = read(authSessionPath);
 
-  assert.match(serverJs, /function persistLoginSession\(req, cb\)/);
-  assert.match(serverJs, /OIDC login session persist failed/);
-  assert.match(serverJs, /Mobile auth session persist failed/);
+  assert.match(authSessionJs, /function persistLoginSession\(req, cb\)/);
+  assert.match(authSessionJs, /OIDC login session persist failed/);
+  assert.match(authSessionJs, /Mobile auth session persist failed/);
 });
 
 test('android manifest keeps misochat deep-link callback intent filter', () => {

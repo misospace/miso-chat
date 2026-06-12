@@ -24,7 +24,7 @@ const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 
 const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
-const { buildSessionConfig, setupPassport, registerAuthRoutes, buildIsAuthenticated } = require('./lib/auth-session');
+const { buildSessionConfig, setupPassport, registerAuthRoutes, buildIsAuthenticated, getReturnTo, getOidcLabel } = require('./lib/auth-session');
 
 const app = express();
 const server = http.createServer(app);
