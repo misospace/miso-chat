@@ -81,6 +81,46 @@ const LINK_PREVIEW_USER_AGENT =
   process.env.LINK_PREVIEW_USER_AGENT ||
   `miso-chat-link-preview/${APP_VERSION} (+https://github.com/misospace/miso-chat)`;
 
+// Per-phase timeout controls for link preview fetches (stricter than overall timeout)
+const LINK_PREVIEW_DNS_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_DNS_TIMEOUT_MS || 3000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
+})();
+const LINK_PREVIEW_CONNECT_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_CONNECT_TIMEOUT_MS || 5000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
+})();
+const LINK_PREVIEW_HEADERS_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_HEADERS_TIMEOUT_MS || 10000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+})();
+const LINK_PREVIEW_BODY_READ_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_BODY_READ_TIMEOUT_MS || 30000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30000;
+})();
+
+// Bounded in-memory cache for link preview results (process-level, not shared across instances).
+const LINK_PREVIEW_CACHE_MAX_SIZE = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_CACHE_MAX_SIZE || 256);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 256;
+})();
+const LINK_PREVIEW_CACHE_TTL_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_CACHE_TTL_MS || 300000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 300000;
+})();
+
+const { PreviewCache, PreviewCoalescer } = require('./lib/link-preview-cache');
+const linkPreviewCache = new PreviewCache({ maxSize: LINK_PREVIEW_CACHE_MAX_SIZE, ttlMs: LINK_PREVIEW_CACHE_TTL_MS });
+const linkPreviewCoalescer = new PreviewCoalescer();
+
+// Periodic cache cleanup (every 60 seconds) — prevents unbounded memory growth from expired entries.
+setInterval(() => {
+  const removed = linkPreviewCache.cleanup();
+  if (removed > 0) console.debug(`Link preview cache cleaned up ${removed} expired entries`);
+  const stats = linkPreviewCache.stats();
+  console.debug(`Link preview cache: ${stats.activeCount}/${stats.maxSize} active, ${stats.expiredCount} expired`);
+}, 60_000).unref?.();
+
 // Mobile OTA update configuration
 const MOBILE_UPDATE_REPO_OWNER = process.env.MOBILE_UPDATE_REPO_OWNER || "misospace";
 const MOBILE_UPDATE_REPO_NAME = process.env.MOBILE_UPDATE_REPO_NAME || "miso-chat";
@@ -332,9 +372,9 @@ app.use(express.static('public', { index: false }));
 
 // Serve lib/ JS modules as browser-accessible scripts (e.g. /lib/render-utils.js)
 app.use('/lib', express.static(path.join(__dirname, 'lib'), { index: false, extensions: ['js'] }));
-
 // Session configuration (delegated to lib/auth-session.js)
 const sessionConfig = buildSessionConfig({ authMode });
+
 const sessionMiddleware = session(sessionConfig);
 app.use(sessionMiddleware);
 
@@ -934,13 +974,44 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
     return res.status(400).json({ error: 'Local/private hosts are not allowed for previews' });
   }
 
-  // Hardened fetch with manual redirect following and hop-by-hop validation
+  // Check cache first (before coalescing, so cached results skip entirely)
+  const cached = linkPreviewCache.get(targetUrl.toString());
+  if (cached) {
+    return res.json(cached.data);
+  }
+
+  // Coalesce concurrent requests for the same URL to avoid duplicate fetches
+  try {
+    const preview = await linkPreviewCoalescer.run(
+      targetUrl.toString(),
+      () => _fetchLinkPreview(rawUrl, targetUrl),
+    );
+
+    // Cache the result for future requests
+    linkPreviewCache.set(targetUrl.toString(), preview);
+
+    return res.json(preview);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const phase = error.phase || 'overall';
+      return res.status(504).json({ error: `Preview fetch timed out during ${phase} phase after ${error.ms}ms` });
+    }
+    console.warn('Link preview fetch failed:', error.message || error);
+    return res.status(502).json({ error: 'Unable to fetch link preview' });
+  }
+});
+
+// Internal helper: fetch and extract a link preview with per-phase timeout controls.
+// Returns { url, title, description, image, domain, twitterCard } or throws.
+async function _fetchLinkPreview(rawUrl, targetUrl) {
   const MAX_REDIRECTS = 5;
   let currentUrl = targetUrl.toString();
   let redirectCount = 0;
-  let finalResponse = null;
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
+
+  // Overall timeout
+  const overallTimeoutHandle = setTimeout(() => {
+    throw new Error('overall');
+  }, LINK_PREVIEW_TIMEOUT_MS);
 
   try {
     while (redirectCount < MAX_REDIRECTS) {
@@ -948,70 +1019,152 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
 
       // Validate each hop's hostname (with DNS resolution for rebinding protection)
       if (await isForbiddenLinkPreviewHost(parsedUrl.hostname, { resolveDns: true })) {
-        clearTimeout(timeoutHandle);
-        return res.status(400).json({ error: 'Redirect target is a local/private host' });
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('Redirect target is a local/private host');
+      }
+
+      // Per-phase timeouts for this hop
+      const hopController = new AbortController();
+
+      // DNS timeout: wrap dns.lookup in a timeout promise
+      const dnsTimeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('dns')), LINK_PREVIEW_DNS_TIMEOUT_MS);
+      });
+
+      try {
+        await Promise.race([
+          promisify(dns.lookup)(parsedUrl.hostname),
+          dnsTimeoutPromise,
+        ]);
+      } catch (dnsErr) {
+        clearTimeout(overallTimeoutHandle);
+        const err = new Error('Preview fetch timed out during dns phase after ' + LINK_PREVIEW_DNS_TIMEOUT_MS + 'ms');
+        err.phase = 'dns';
+        err.ms = LINK_PREVIEW_DNS_TIMEOUT_MS;
+        throw err;
+      }
+
+      // Connect + headers timeout via AbortController signal
+      const headersTimeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          hopController.abort(new Error('headers'));
+        }, LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS);
+      });
+
+      try {
+        await Promise.race([
+          Promise.resolve(), // no-op — we rely on the signal below
+          headersTimeoutPromise,
+        ]);
+      } catch {
+        clearTimeout(overallTimeoutHandle);
+        const err = new Error('Preview fetch timed out during connect+headers phase after ' + (LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS) + 'ms');
+        err.phase = 'connect+headers';
+        err.ms = LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS;
+        throw err;
       }
 
       const hopRes = await fetch(currentUrl, {
         method: 'GET',
         redirect: 'manual',
-        signal: controller.signal,
+        signal: hopController.signal,
         headers: {
           Accept: 'text/html,application/xhtml+xml',
           'User-Agent': LINK_PREVIEW_USER_AGENT,
         },
       });
 
-      if (hopRes.status >= 300 && hopRes.status < 400 && hopRes.headers.get('location')) {
+      let hopStatus = hopRes.status;
+      let hopHeaders = hopRes.headers;
+      let isRedirect = false;
+
+      if (hopStatus >= 300 && hopStatus < 400 && hopHeaders.get('location')) {
+        isRedirect = true;
+      }
+
+      if (isRedirect) {
         redirectCount++;
         if (redirectCount > MAX_REDIRECTS) {
-          clearTimeout(timeoutHandle);
-          return res.status(400).json({ error: 'Redirect chain too long' });
+          clearTimeout(overallTimeoutHandle);
+          throw new Error('Redirect chain too long');
         }
         try {
-          currentUrl = new URL(hopRes.headers.get('location'), currentUrl).toString();
+          currentUrl = new URL(hopHeaders.get('location'), currentUrl).toString();
         } catch {
-          clearTimeout(timeoutHandle);
-          return res.status(400).json({ error: 'Invalid redirect URL' });
+          clearTimeout(overallTimeoutHandle);
+          throw new Error('Invalid redirect URL');
         }
         continue;
       }
 
-      finalResponse = hopRes;
-      break;
+      // Non-redirect: validate and read body
+      if (!hopRes.ok) {
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('Upstream request failed (' + hopStatus + ')');
+      }
+
+      // Validate the final resolved URL is not a private host (catches last-hop SSRF)
+      const finalUrlParsed = hopRes.url ? new URL(hopRes.url) : null;
+      if (finalUrlParsed && await isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('Final redirect target is a local/private host');
+      }
+
+      const contentType = String(hopRes.headers.get('content-type') || '').toLowerCase();
+      if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('URL does not point to an HTML document');
+      }
+
+      // Read body with size limit and per-phase timeout
+      const htmlStream = hopRes.body;
+      let htmlChunks = [];
+      let htmlLength = 0;
+      const bodyReadController = new AbortController();
+      const bodyReadTimeoutHandle = setTimeout(() => {
+        bodyReadController.abort(new Error('body-read'));
+      }, LINK_PREVIEW_BODY_READ_TIMEOUT_MS);
+
+      try {
+        for await (const chunk of htmlStream) {
+          if (bodyReadController.signal.aborted) break;
+          const chunkStr = Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk);
+          htmlLength += chunkStr.length;
+          if (htmlLength > LINK_PREVIEW_MAX_HTML_CHARS * 1.5) {
+            // Soft limit: stop reading but don't error yet
+            break;
+          }
+          htmlChunks.push(chunkStr);
+        }
+      } finally {
+        clearTimeout(bodyReadTimeoutHandle);
+      }
+
+      const html = htmlChunks.join('').slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
+      const finalUrl = hopRes.url || targetUrl.toString();
+      clearTimeout(overallTimeoutHandle);
+      return extractLinkPreviewData(html, finalUrl);
     }
 
-    if (!finalResponse || !finalResponse.ok) {
-      const status = finalResponse?.status || 502;
-      return res.status(status >= 300 && status < 400 ? 400 : 502).json({ error: `Upstream request failed (${status})` });
-    }
-
-    // Validate the final resolved URL is not a private host (catches last-hop SSRF)
-    const finalUrlParsed = finalResponse.url ? new URL(finalResponse.url) : null;
-    if (finalUrlParsed && await isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
-      return res.status(400).json({ error: 'Final redirect target is a local/private host' });
-    }
-
-    const contentType = String(finalResponse.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
-      return res.status(422).json({ error: 'URL does not point to an HTML document' });
-    }
-
-    const html = (await finalResponse.text()).slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
-    const finalUrl = finalResponse.url || targetUrl.toString();
-    const preview = extractLinkPreviewData(html, finalUrl);
-
-    return res.json(preview);
+    // Should not reach here, but handle gracefully
+    clearTimeout(overallTimeoutHandle);
+    throw new Error('Redirect chain exhausted without a response');
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      return res.status(504).json({ error: `Preview fetch timed out after ${LINK_PREVIEW_TIMEOUT_MS}ms` });
+    clearTimeout(overallTimeoutHandle);
+    if (error?.phase && error?.ms) {
+      // Re-throw with timeout metadata
+      throw error;
     }
-    console.warn('Link preview fetch failed:', error.message || error);
-    return res.status(502).json({ error: 'Unable to fetch link preview' });
-  } finally {
-    clearTimeout(timeoutHandle);
+    // Wrap non-timeout errors so the route handler can distinguish them
+    if (!(error instanceof Error) || !error.phase) {
+      const wrapped = new Error(error.message || 'Preview fetch failed');
+      wrapped.phase = 'fetch';
+      wrapped.ms = 0;
+      throw wrapped;
+    }
+    throw error;
   }
-});
+}
 
 // GET /api/openclaw-status - Return native OpenClaw session status card/details
 app.get('/api/openclaw-status', isAuthenticated, requireSessionOwnership(authMode), async (req, res) => {
