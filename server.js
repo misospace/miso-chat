@@ -372,6 +372,8 @@ app.use(express.static('public', { index: false }));
 
 // Serve lib/ JS modules as browser-accessible scripts (e.g. /lib/render-utils.js)
 app.use('/lib', express.static(path.join(__dirname, 'lib'), { index: false, extensions: ['js'] }));
+// Session configuration (delegated to lib/auth-session.js)
+const sessionConfig = buildSessionConfig({ authMode });
 
 const sessionMiddleware = session(sessionConfig);
 app.use(sessionMiddleware);
