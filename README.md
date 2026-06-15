@@ -36,9 +36,13 @@ docker-compose up -d
 ```bash
 docker run -d --name miso-chat \
   -p 3000:3000 \
+  -v miso-chat-data:/app/data \
   -e GATEWAY_URL=ws://your-gateway:18789 \
   -e SESSION_SECRET=your-secret \
   ghcr.io/misospace/miso-chat:latest
+
+> **Note:** The image runs as a non-root `node` user and includes a healthcheck on `/api/health`.
+> Mount `/app/data` to persist the SQLite database across container restarts.
 ```
 
 ## Configuration
@@ -53,7 +57,8 @@ docker run -d --name miso-chat \
 | `CSRF_TRUSTED_ORIGINS` | No | - | Comma-separated extra origins allowed for state-changing requests |
 | `OIDC_ENABLED` | No | `false` | Enable OIDC auth |
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
-| `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
+| `REDIS_URL` | **Yes in production** | - | Redis/Dragonfly session store (required for production) |
+| `ALLOW_MEMORY_STORE` | No | `false` | Override production Redis requirement for development/testing |
 | `CAPACITOR_COOKIES_ENABLED` | No | `true` | Enable Capacitor cookie bridge for native app builds |
 | `PUSH_NOTIFICATIONS_ENABLED` | No | `false` | Reserved for future browser push support (production web-push NOT implemented) |
 | `PUSH_VAPID_PUBLIC_KEY` | If push enabled | - | Public VAPID key (reserved for future implementation) |
@@ -362,7 +367,9 @@ env:
   REDIS_URL: "redis://{{ .Release.Name }}-dragonfly:6379"
 ```
 
-This is optional. If `REDIS_URL` is not set, miso-chat falls back to in-memory sessions.
+In **production**, `REDIS_URL` is required — without it, miso-chat will refuse to start (fail-fast). This prevents silent data loss from in-memory session stores across restarts or multi-instance deployments.
+
+For local development and testing, the in-memory store is used by default. If you need MemoryStore in production for a specific reason, set `ALLOW_MEMORY_STORE=true` to override the check.
 
 ## OTA Updates
 
