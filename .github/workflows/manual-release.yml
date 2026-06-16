@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Generate bot token
         id: app-token
@@ -55,14 +56,51 @@ jobs:
       - name: Bump package.json version
         run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
 
-      - name: Commit version bump
+      - name: Commit version bump to release branch
+        id: bump
         run: |
           git add package.json package-lock.json
           if git diff --cached --quiet; then
             echo "No version file changes to commit"
           else
+            BRANCH="chore/release-v${{ steps.version.outputs.version }}"
             git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
-            git push origin HEAD:main
+            git push origin "HEAD:${BRANCH}"
+            echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open version-bump PR and enable auto-merge
+        if: steps.bump.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore: release v${VERSION}" \
+            --body "Automated version bump to v${VERSION} for the next release." \
+            --delete-branch
+          gh pr merge "${BRANCH}" --auto --squash --delete-branch
+
+      - name: Wait for version-bump PR to merge
+        if: steps.bump.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          for i in $(seq 1 120); do
+            STATE=$(gh pr view "${BRANCH}" --json state -q .state 2>/dev/null || echo "OPEN")
+            if [ "$STATE" = "MERGED" ]; then
+              echo "PR merged"
+              break
+            fi
+            sleep 5
+          done
+          if [ "$STATE" != "MERGED" ]; then
+            echo "ERROR: version-bump PR did not merge within 10 minutes"
+            exit 1
           fi
 
       - name: Ensure remote main is current
