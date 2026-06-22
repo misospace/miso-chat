@@ -21,49 +21,16 @@
 4. Gateway responds with connect ACK → connection established
 
 ### Release Process
-The release process is manual and CLI-driven. Branch protection blocks direct pushes to `main`, so all version bumps go through a branch + PR.
+Releases are started manually and completed by GitHub Actions. Branch protection remains enabled: the workflow opens a version-bump PR and enables auto-merge instead of pushing directly to `main`.
 
 #### Steps
 
-```bash
-# Ensure main is up-to-date
-git checkout main
-git pull --ff-only --tags origin main
+1. Open **Actions → Manual Release → Run workflow**.
+2. Enter a plain semver version such as `0.4.15` (`v0.4.15` is also accepted).
+3. Follow the release PR linked in the workflow log. It auto-merges after the required checks pass.
+4. `Publish Release` tags the merge commit and creates the GitHub release.
 
-# Branch for the version bump
-git checkout -b chore/release-v<version>
-
-# Bump version
-npm version <version> --no-git-tag-version --allow-same-version
-
-# Validate
-npm run lint
-npm run test:ci
-
-# Commit and push branch
-git add package.json package-lock.json
-git commit -m "chore(release): bump version to <version>"
-git push -u origin chore/release-v<version>
-
-# Open PR and squash-merge (remove branch protection if needed, or use a bot token)
-gh pr create --repo misospace/miso-chat --base main --head chore/release-v<version> \
-  --title "chore(release): bump version to <version>" \
-  --body "Version bump for release v<version>."
-
-# Merge the PR
-gh pr merge --repo misospace/miso-chat --squash --delete-branch
-
-# After PR merge, tag from up-to-date main
-git checkout main
-git pull --ff-only --tags origin main
-git tag <version>
-git push origin <version>
-
-# Create release
-gh release create <version> --repo misospace/miso-chat --title "<version>" --generate-notes
-```
-
-The tag push triggers `Release Build & Verify` (`.github/workflows/release.yaml`): regression tests + auth smoke check.
+Publishing the GitHub release triggers `Release Build & Verify` (`.github/workflows/release.yaml`): regression tests, auth smoke check, and release builds.
 
 #### Version source of truth
 
@@ -72,9 +39,7 @@ The tag push triggers `Release Build & Verify` (`.github/workflows/release.yaml`
 
 #### Validation gates
 
-Before opening the version bump PR:
-- `npm run lint` — syntax check all JS files
-- `npm run test:ci` — all regression tests pass
+The release PR must pass the protected branch's required checks, including lint and regression tests, before auto-merge.
 
 
 ## Guidelines
