@@ -82,13 +82,11 @@ function getServerOrigin(req) {
   return normalizeOrigin(`${protocol}://${host}`);
 }
 
-function generateNonce() {
-  return crypto.randomBytes(16).toString('base64');
-}
 /**
- * NOTE: CSP is no longer a static CONTENT_SECURITY_POLICY constant.
- * It is now set dynamically in securityHeaders() with per-request nonces,
- * which is more secure (prevents script injection even if nonce source leaks).
+ * NOTE: CSP is set dynamically in securityHeaders().
+ * Since index.html is served as a static file (no template rendering),
+ * nonce-based inline script restriction is not feasible.
+ * 'unsafe-inline' is used for script-src to allow inline scripts.
  */
 
 // ---------------------------------------------------------------------------
@@ -192,8 +190,6 @@ function csrfTokenCheck(req, res, next) {
 }
 
 function securityHeaders(req, res, next) {
-  const nonce = generateNonce();
-  if (res.locals) res.locals.cspNonce = nonce;
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -205,7 +201,7 @@ function securityHeaders(req, res, next) {
     "frame-ancestors 'none'",
     "img-src 'self' data:",
     `style-src 'self' 'unsafe-inline'`,
-    `script-src 'self' 'nonce-${nonce}'`,
+    "script-src 'self' 'unsafe-inline'",
     "connect-src 'self' ws: wss:",
     "form-action 'self'",
   ].join('; '));
