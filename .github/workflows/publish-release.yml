@@ -99,8 +99,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          EXISTING_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha 2>/dev/null || true)
-          if [ -n "$EXISTING_SHA" ]; then
+          if EXISTING_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha 2>/dev/null); then
             if [ "$EXISTING_SHA" != "$MERGE_SHA" ]; then
               echo "Tag $VERSION already points to $EXISTING_SHA"
               exit 1
