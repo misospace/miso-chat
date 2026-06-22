@@ -4,17 +4,24 @@ on:
   pull_request_target:
     branches: [main]
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      release_pr:
+        description: 'Merged release PR number to recover or republish'
+        required: true
+        type: number
 
 concurrency:
-  group: publish-release
+  group: publish-release-${{ inputs.release_pr || github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   publish-release:
     if: >-
-      github.event.pull_request.merged == true &&
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'chore/release-v') &&
-      endsWith(github.event.pull_request.user.login, '[bot]')
+      endsWith(github.event.pull_request.user.login, '[bot]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,24 +34,44 @@ jobs:
           client-id: ${{ secrets.BOT_CLIENT_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
 
-      - name: Verify release PR contents
+      - name: Resolve and verify release PR
+        id: release-pr
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ inputs.release_pr || github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          FILES=$(gh pr view "$PR_NUMBER" --json files --jq '.files[].path' | sort)
+          PR=$(gh pr view "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json author,headRefName,mergedAt,mergeCommit)
+          AUTHOR=$(jq -r '.author.login' <<<"$PR")
+          HEAD_REF=$(jq -r '.headRefName' <<<"$PR")
+          MERGED_AT=$(jq -r '.mergedAt // empty' <<<"$PR")
+          MERGE_SHA=$(jq -r '.mergeCommit.oid // empty' <<<"$PR")
+          if [ -z "$MERGED_AT" ] || [ -z "$MERGE_SHA" ]; then
+            echo "PR #$PR_NUMBER is not merged"
+            exit 1
+          fi
+          if [[ "$HEAD_REF" != chore/release-v* ]] || [[ "$AUTHOR" != *\[bot\] ]]; then
+            echo "PR #$PR_NUMBER is not a bot-authored release PR"
+            exit 1
+          fi
+          FILES=$(gh pr view "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json files \
+            --jq '.files[].path' | sort)
           EXPECTED=$'package-lock.json\npackage.json'
           if [ "$FILES" != "$EXPECTED" ]; then
             echo "Release PR changed unexpected files:"
             echo "$FILES"
             exit 1
           fi
+          echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Checkout merged release
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ steps.release-pr.outputs.merge_sha }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -67,7 +94,7 @@ jobs:
       - name: Create tag at merge commit
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          MERGE_SHA: ${{ steps.release-pr.outputs.merge_sha }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
@@ -90,10 +117,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $VERSION already exists"
           else
             gh release create "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --title "$VERSION" \
               --generate-notes
