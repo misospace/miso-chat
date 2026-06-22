@@ -16,15 +16,15 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.json">
     <!-- OTA Update Manager -->
-    <script src="/mobile/update-manager.js"></script>
+    <script data-cfasync="false" src="/mobile/update-manager.js"></script>
     <!-- Extracted rendering utilities (shared with tests) -->
     <!-- Capacitor native-platform detection (shared across index.html and browser modules) -->
-    <script src="/lib/capacitor-detect.js"></script>
-    <script src="/lib/render-utils.js"></script>
+    <script data-cfasync="false" src="/lib/capacitor-detect.js"></script>
+    <script data-cfasync="false" src="/lib/render-utils.js"></script>
     <!-- Reaction event parsing (mirrors lib/reaction-events.js for browser) -->
-    <script src="/lib/reaction-events-browser.js"></script>
+    <script data-cfasync="false" src="/lib/reaction-events-browser.js"></script>
     <!-- Extracted API client & backend URL management -->
-    <script src="/lib/api-client.js"></script>
+    <script data-cfasync="false" src="/lib/api-client.js"></script>
     
     <style>
         :root {
