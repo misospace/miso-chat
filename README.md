@@ -437,11 +437,11 @@ await MobileUpdateManager.init({
 
 ### Release Workflow
 
-To publish an update, use the **Manual Release** GitHub Actions workflow and enter a version like `0.4.13`. It normalizes `v0.4.13` to `0.4.13`, bumps `package.json`, commits the bump to `main`, creates the plain-semver tag, and creates the GitHub release with generated notes.
+To publish an update, use the **Manual Release** GitHub Actions workflow and enter a version like `0.4.15`. It normalizes `v0.4.15` to `0.4.15`, opens a version-bump PR, and enables auto-merge. After the required checks pass, **Publish Release** tags the merged commit and creates the GitHub release with generated notes.
 
 1. Run the `Manual Release` workflow with the target version
-2. The workflow updates `package.json` on `main`
-3. The workflow creates the plain-semver git tag (for example `0.4.13`)
+2. Follow the linked version-bump PR; it merges automatically after required checks pass
+3. The publish workflow creates the plain-semver git tag (for example `0.4.15`)
 4. Attach the APK/IPA and `update-manifest.json` to the created GitHub release if needed
 5. The update manager will automatically detect the new version
 

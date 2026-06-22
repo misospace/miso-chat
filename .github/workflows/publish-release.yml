@@ -1,0 +1,100 @@
+name: Publish Release
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'chore/release-v') &&
+      endsWith(github.event.pull_request.user.login, '[bot]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Verify release PR contents
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          FILES=$(gh pr view "$PR_NUMBER" --json files --jq '.files[].path' | sort)
+          EXPECTED=$'package-lock.json\npackage.json'
+          if [ "$FILES" != "$EXPECTED" ]; then
+            echo "Release PR changed unexpected files:"
+            echo "$FILES"
+            exit 1
+          fi
+
+      - name: Checkout merged release
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Resolve and validate release version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version package.json)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid package version: $VERSION"
+            exit 1
+          fi
+          LOCK_VERSION=$(jq -r .version package-lock.json)
+          if [ "$LOCK_VERSION" != "$VERSION" ]; then
+            echo "package-lock.json version $LOCK_VERSION does not match package.json $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag at merge commit
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          EXISTING_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq .object.sha 2>/dev/null || true)
+          if [ -n "$EXISTING_SHA" ]; then
+            if [ "$EXISTING_SHA" != "$MERGE_SHA" ]; then
+              echo "Tag $VERSION already points to $EXISTING_SHA"
+              exit 1
+            fi
+            echo "Tag $VERSION already points to the release commit"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$VERSION" \
+              -f sha="$MERGE_SHA" >/dev/null
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists"
+          else
+            gh release create "$VERSION" \
+              --verify-tag \
+              --title "$VERSION" \
+              --generate-notes
+          fi
