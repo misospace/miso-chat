@@ -45,6 +45,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --json author,headRefName,mergedAt,mergeCommit)
           AUTHOR=$(jq -r '.author.login' <<<"$PR")
+          IS_BOT=$(jq -r '.author.is_bot // false' <<<"$PR")
           HEAD_REF=$(jq -r '.headRefName' <<<"$PR")
           MERGED_AT=$(jq -r '.mergedAt // empty' <<<"$PR")
           MERGE_SHA=$(jq -r '.mergeCommit.oid // empty' <<<"$PR")
@@ -52,8 +53,8 @@ jobs:
             echo "PR #$PR_NUMBER is not merged"
             exit 1
           fi
-          if [[ "$HEAD_REF" != chore/release-v* ]] || [[ "$AUTHOR" != *\[bot\] ]]; then
-            echo "PR #$PR_NUMBER is not a bot-authored release PR"
+          if [[ "$HEAD_REF" != chore/release-v* ]] || [ "$IS_BOT" != "true" ]; then
+            echo "PR #$PR_NUMBER is not a bot-authored release PR (author: $AUTHOR)"
             exit 1
           fi
           FILES=$(gh pr view "$PR_NUMBER" \
