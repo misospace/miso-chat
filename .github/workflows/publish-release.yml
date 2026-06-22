@@ -122,7 +122,6 @@ jobs:
           else
             gh release create "$VERSION" \
               --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
               --title "$VERSION" \
               --generate-notes
           fi
