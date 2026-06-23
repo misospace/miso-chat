@@ -227,6 +227,15 @@ async function apiFetch(path, options) {
     return response;
 }
 
+/**
+ * Only transient HTTP failures should remain in the persistent send queue.
+ * Permanent client errors must be shown once and discarded instead of retried.
+ */
+function isRetryableSendStatus(status) {
+    const code = Number(status);
+    return code === 408 || code === 425 || code === 429 || code >= 500;
+}
+
 /* ---------------------------------------------------------------------------
  * Backend connection testing
  * ------------------------------------------------------------------------ */
@@ -288,6 +297,7 @@ if (typeof module !== 'undefined' && module.exports) {
         API_BASE_STORAGE_KEY,
         normalizeBaseUrl,
         apiUrl,
+        isRetryableSendStatus,
         backendHealthUrl,
         testBackendConnection,
     };
