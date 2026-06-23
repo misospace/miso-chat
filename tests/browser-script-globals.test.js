@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const publicDir = path.join(__dirname, '..', 'public');
+const publicRoot = path.resolve(publicDir);
 const indexHtml = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
 
 test('classic browser scripts share a valid global lexical scope', () => {
@@ -18,7 +19,11 @@ test('classic browser scripts share a valid global lexical scope', () => {
 
     const srcMatch = attributes.match(/\bsrc=["']([^"']+)["']/i);
     if (srcMatch) {
-      const sourcePath = path.join(publicDir, srcMatch[1].replace(/^\//, ''));
+      const sourcePath = path.resolve(publicRoot, srcMatch[1].replace(/^\//, ''));
+      assert.ok(
+        sourcePath.startsWith(`${publicRoot}${path.sep}`),
+        `script source must stay within public/: ${srcMatch[1]}`
+      );
       sources.push(fs.readFileSync(sourcePath, 'utf8'));
     } else {
       sources.push(match[2]);
