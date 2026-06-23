@@ -3684,11 +3684,13 @@
                 const data = await response.json();
 
                 if (!response.ok || !data?.success) {
-                    sendFailed = true;
                     const errorText = data?.error || response.statusText || 'Send failed';
                     addMessage('system', errorText);
-                    sendQueue.unshift(next);
-                    savePendingQueue(sendQueue);
+                    if (isRetryableSendStatus(response.status)) {
+                        sendFailed = true;
+                        sendQueue.unshift(next);
+                        savePendingQueue(sendQueue);
+                    }
                     return;
                 }
 

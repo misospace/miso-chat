@@ -1,12 +1,9 @@
 /**
  * Authorization / Integration Test Matrix
  *
- * Covers the audit findings for misospace/miso-chat#539:
- *   1. Authenticated users are not authorized per gateway session or operation.
- *      Only `isAuthenticated` is the gate — missing `requireSessionOwnership` on
- *      some routes. This test matrix verifies that all authenticated routes properly
- *      enforce session ownership, denial of cross-user access, and correct behavior
- *      under OIDC vs local auth modes.
+ * Covers the authentication and request-origin boundaries:
+ *   1. Session routes require a valid web login. OpenClaw session keys identify
+ *      agents, not web users, so authenticated users share deployment access.
  *   2. CSRF protection is origin-only and broad for mobile/web hybrid deployment.
  *      Verifies csrfOriginCheck blocks untrusted origins and accepts trusted ones.
  *   3. `/api/config` exposure — verifies what config is publicly accessible.
@@ -117,20 +114,15 @@ test('GET /api/config exposes defaultSessionKey even without auth', async () => 
 });
 
 test('GET /api/config does NOT expose OIDC secrets when OIDC is enabled', async () => {
-  // Note: We cannot start the server with AUTH_MODE=oidc without proper OIDC config
-  // (issuer, clientID, etc.), so we verify via lib-level assertions instead.
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  // OIDC auth mode requires authentication — no unauthenticated access
-  const unauthReq = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(unauthReq, 'agent:anyone:any', 'oidc'), false);
-
-  // OIDC mode grants access only when email/username matches session owner
-  const oidcMatch = { user: { username: 'alice', email: 'alice@example.com' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(oidcMatch, 'agent:alice:main', 'oidc'), true);
-
-  const oidcNoMatch = { user: { username: 'bob', email: 'bob@example.com' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(oidcNoMatch, 'agent:alice:main', 'oidc'), false);
+  await withServer({
+    AUTH_MODE: 'none',
+    OIDC_CLIENT_SECRET: 'must-not-leak',
+    OIDC_CLIENT_ID: 'miso-chat',
+  }, async (base) => {
+    const res = await httpReq(base, '/api/config');
+    assert.equal(res.statusCode, 200);
+    assert.doesNotMatch(JSON.stringify(res.json), /must-not-leak/);
+  });
 });
 
 // ============================================================
@@ -275,8 +267,8 @@ test('POST /api/messages/:messageId/reactions returns redirect or error when una
 // SECTION 4: Session ownership middleware verification via route behavior
 // ============================================================
 
-test('requireSessionOwnership middleware blocks cross-user session access', async () => {
-  const { requireSessionOwnership, checkSessionOwnership } = require('../lib/session-auth');
+test('session access does not infer web ownership from an OpenClaw agent ID', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Simulate Alice trying to access Bob's session in local auth mode
   const req = {
@@ -297,16 +289,14 @@ test('requireSessionOwnership middleware blocks cross-user session access', asyn
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('local');
+  const mw = requireSessionAccess('local');
   mw(req, res, () => { nextCalled = true; });
 
-  assert.equal(nextCalled, false, 'Cross-user session access should be blocked');
-  assert.equal(res.statusCode, 403);
-  assert.ok(res.payload.error.includes('Forbidden'), 'Should return Forbidden error');
+  assert.equal(nextCalled, true, 'Authenticated users share deployment session access');
 });
 
-test('requireSessionOwnership middleware allows same-user session access', async () => {
-  const { requireSessionOwnership } = require('../lib/session-auth');
+test('requireSessionAccess allows an authenticated local user', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Alice accessing her own session
   const req = {
@@ -327,14 +317,14 @@ test('requireSessionOwnership middleware allows same-user session access', async
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('local');
+  const mw = requireSessionAccess('local');
   mw(req, res, () => { nextCalled = true; });
 
   assert.equal(nextCalled, true, 'Same-user session access should be allowed');
 });
 
-test('requireSessionOwnership middleware allows access when authMode=none', async () => {
-  const { requireSessionOwnership } = require('../lib/session-auth');
+test('requireSessionAccess allows access when authMode=none', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Any user accessing any session when auth is disabled
   const req = {
@@ -355,14 +345,14 @@ test('requireSessionOwnership middleware allows access when authMode=none', asyn
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('none');
+  const mw = requireSessionAccess('none');
   mw(req, res, () => { nextCalled = true; });
 
   assert.equal(nextCalled, true, 'Auth disabled mode should allow all access');
 });
 
-test('requireSessionOwnership middleware checks query sessionKey parameter', async () => {
-  const { requireSessionOwnership } = require('../lib/session-auth');
+test('session access does not treat query sessionKey as web ownership data', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Bob accessing Alice's session via query param
   const req = {
@@ -383,14 +373,14 @@ test('requireSessionOwnership middleware checks query sessionKey parameter', asy
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('local');
+  const mw = requireSessionAccess('local');
   mw(req, res, () => { nextCalled = true; });
 
-  assert.equal(nextCalled, false, 'Cross-user access via query param should be blocked');
+  assert.equal(nextCalled, true, 'Authenticated users share deployment session access');
 });
 
-test('requireSessionOwnership middleware checks body sessionKey parameter', async () => {
-  const { requireSessionOwnership } = require('../lib/session-auth');
+test('session access does not treat body sessionKey as web ownership data', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Bob accessing Alice's session via body param
   const req = {
@@ -411,14 +401,14 @@ test('requireSessionOwnership middleware checks body sessionKey parameter', asyn
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('local');
+  const mw = requireSessionAccess('local');
   mw(req, res, () => { nextCalled = true; });
 
-  assert.equal(nextCalled, false, 'Cross-user access via body param should be blocked');
+  assert.equal(nextCalled, true, 'Authenticated users share deployment session access');
 });
 
-test('requireSessionOwnership middleware skips when no session key provided', async () => {
-  const { requireSessionOwnership } = require('../lib/session-auth');
+test('requireSessionAccess does not require a session key', async () => {
+  const { requireSessionAccess } = require('../lib/session-auth');
 
   // Route without session key (e.g., /api/sessions list)
   const req = {
@@ -439,111 +429,111 @@ test('requireSessionOwnership middleware skips when no session key provided', as
   };
 
   let nextCalled = false;
-  const mw = requireSessionOwnership('local');
+  const mw = requireSessionAccess('local');
   mw(req, res, () => { nextCalled = true; });
 
   assert.equal(nextCalled, true, 'Routes without session key should skip ownership check');
 });
 
 // ============================================================
-// SECTION 5: OIDC mode — session ownership by email/username
+// SECTION 5: OIDC session access
 // ============================================================
 
-test('checkSessionOwnership allows OIDC user when email includes session owner', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('checkSessionAccess allows an authenticated OIDC user with email', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = {
     user: { username: 'user123', email: 'alice@example.com' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), true);
+  assert.equal(checkSessionAccess(req, 'oidc'), true);
 });
 
-test('checkSessionOwnership allows OIDC user when username matches session owner', async () => {
-  const checkSessionOwnership = require('../lib/session-auth').checkSessionOwnership;
+test('checkSessionAccess allows an authenticated OIDC user with username', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = {
     user: { username: 'alice', email: 'alice@example.com' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), true);
+  assert.equal(checkSessionAccess(req, 'oidc'), true);
 });
 
-test('checkSessionOwnership denies OIDC user when neither email nor username matches', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('session access allows an authenticated OIDC user regardless of agent ID', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = {
     user: { username: 'bob', email: 'bob@example.com' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), false);
+  assert.equal(checkSessionAccess(req, 'oidc'), true);
 });
 
-test('checkSessionOwnership denies unauthenticated requests in OIDC mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('checkSessionAccess denies unauthenticated requests in OIDC mode', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(req, 'agent:bob:main', 'oidc'), false);
+  assert.equal(checkSessionAccess(req, 'oidc'), false);
 });
 
-test('checkSessionOwnership denies unknown session key format in OIDC mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('session access does not parse unknown session keys in OIDC mode', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = {
     user: { username: 'alice', email: 'alice@example.com' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'unknown-session-key', 'oidc'), false);
+  assert.equal(checkSessionAccess(req, 'oidc'), true);
 });
 
 // ============================================================
-// SECTION 6: Local auth mode — session ownership by username
+// SECTION 6: Local session access
 // ============================================================
 
-test('checkSessionOwnership allows local user when username matches session owner', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('checkSessionAccess allows an authenticated local user', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: { username: 'alice' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), true);
+  assert.equal(checkSessionAccess(req, 'local'), true);
 });
 
-test('checkSessionOwnership denies local user when username does not match session owner', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('session access allows an authenticated local user regardless of agent ID', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: { username: 'bob' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), false);
+  assert.equal(checkSessionAccess(req, 'local'), true);
 });
 
-test('checkSessionOwnership denies unauthenticated requests in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('checkSessionAccess denies unauthenticated requests in local mode', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(req, 'agent:bob:main', 'local'), false);
+  assert.equal(checkSessionAccess(req, 'local'), false);
 });
 
-test('checkSessionOwnership denies unknown session key format in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('session access does not parse unknown session keys in local mode', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: { username: 'alice' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(req, 'random-key-123', 'local'), false);
+  assert.equal(checkSessionAccess(req, 'local'), true);
 });
 
 // ============================================================
 // SECTION 7: g-agent session key format ownership
 // ============================================================
 
-test('checkSessionOwnership allows matching g-agent session key in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('checkSessionAccess allows authenticated local access to g-agent sessions', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: { username: 'chat' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(req, 'g-agent-chat-123e4567-e89b-12d3-a456-426614174000', 'local'), true);
+  assert.equal(checkSessionAccess(req, 'local'), true);
 });
 
-test('checkSessionOwnership denies non-matching g-agent session key in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('session access allows authenticated users across g-agent IDs', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const req = { user: { username: 'alice' }, isAuthenticated: () => true };
-  assert.equal(checkSessionOwnership(req, 'g-agent-chat-123e4567-e89b-12d3-a456-426614174000', 'local'), false);
+  assert.equal(checkSessionAccess(req, 'local'), true);
 });
 
 // ============================================================
@@ -559,19 +549,18 @@ test('When AUTH_MODE=none, /api/config is accessible without auth', async () => 
   });
 });
 
-test('When AUTH_MODE=none, session ownership check is a no-op', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('When AUTH_MODE=none, session access check is a no-op', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
   const fakeReq = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(fakeReq, 'agent:anyone:any', 'none'), true);
-  assert.equal(checkSessionOwnership(fakeReq, 'unknown-key', 'none'), true);
+  assert.equal(checkSessionAccess(fakeReq, 'none'), true);
 });
 
 // ============================================================
-// SECTION 9: Routes that SHOULD have but might lack requireSessionOwnership
+// SECTION 9: Session routes require authentication
 // ============================================================
 
-test('GET /api/sessions/:key/history enforces session ownership (route-level check)', async () => {
+test('GET /api/sessions/:key/history requires authentication', async () => {
   await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
     const res = await httpReq(base, '/api/sessions/agent:bob:main/history');
     // Without auth cookie, should NOT return 200 with history data
@@ -579,7 +568,7 @@ test('GET /api/sessions/:key/history enforces session ownership (route-level che
   });
 });
 
-test('GET /api/sessions/:key/send enforces session ownership (route-level check)', async () => {
+test('GET /api/sessions/:key/send requires authentication', async () => {
   await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
     const res = await httpReq(base, '/api/sessions/agent:bob:main/send', {
       method: 'POST',
@@ -591,7 +580,7 @@ test('GET /api/sessions/:key/send enforces session ownership (route-level check)
   });
 });
 
-test('GET /api/sessions/:key/send-stream enforces session ownership (route-level check)', async () => {
+test('GET /api/sessions/:key/send-stream requires authentication', async () => {
   await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
     const res = await httpReq(base, '/api/sessions/agent:bob:main/send-stream', {
       method: 'POST',
