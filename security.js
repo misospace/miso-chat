@@ -173,7 +173,6 @@ function csrfTokenCheck(req, res, next) {
 
   let match = true;
   for (let i = 0; i < providedToken.length; i++) {
-    // eslint-disable-next-line no-bitwise
     match &= providedToken.charCodeAt(i) === expected.charCodeAt(i);
   }
 
@@ -204,6 +203,8 @@ function securityHeaders(req, res, next) {
     "script-src 'self' 'unsafe-inline'",
     "connect-src 'self' ws: wss:",
     "form-action 'self'",
+    "media-src 'self'",
+    "worker-src 'self'",
   ].join('; '));
   next();
 }
