@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "lint": "npx eslint server.js security.js lib/ tests/",
-    "test": "node --check server.js && node --test tests/*.test.js",
+    "test": "node --check server.js && node --require ./tests/setup/load-first.js --test tests/*.test.js",
     "test:ci": "NODE_OPTIONS='--test-reporter=tap' npm test > test-results.json 2>&1",
     "release:readiness": "./scripts/release-readiness-check.sh",
     "smoke:deploy": "./scripts/post-deploy-smoke.sh",
@@ -35,8 +35,5 @@
     "passport-openidconnect": "^0.1.2",
     "redis": "^6.0.0",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.0"
   }
 }
