@@ -21,6 +21,7 @@ const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
 const { requireSessionAccess } = require('./lib/session-auth');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
+const { createReactionsRoutes } = require('./lib/routes/reactions');
 
 const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
@@ -109,9 +110,30 @@ const LINK_PREVIEW_CACHE_TTL_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 300000;
 })();
 
-const { PreviewCache, PreviewCoalescer } = require('./lib/link-preview-cache');
+// Per-host concurrency limit for link preview fetches (prevents DNS/network saturation)
+const LINK_PREVIEW_MAX_CONCURRENT_PER_HOST = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_MAX_CONCURRENT_PER_HOST || 2);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2;
+})();
+
+// Jittered retry on 5xx for link preview fetches
+const LINK_PREVIEW_RETRY_MAX_ATTEMPTS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_RETRY_MAX_ATTEMPTS || 2);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2;
+})();
+const LINK_PREVIEW_RETRY_BASE_DELAY_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_RETRY_BASE_DELAY_MS || 200);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 200;
+})();
+const LINK_PREVIEW_RETRY_MAX_DELAY_MS = (() => {
+  const parsed = Number(process.env.LINK_PREVIEW_RETRY_MAX_DELAY_MS || 1000);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1000;
+})();
+
+const { PreviewCache, PreviewCoalescer, HostConcurrencyLimiter } = require('./lib/link-preview-cache');
 const linkPreviewCache = new PreviewCache({ maxSize: LINK_PREVIEW_CACHE_MAX_SIZE, ttlMs: LINK_PREVIEW_CACHE_TTL_MS });
 const linkPreviewCoalescer = new PreviewCoalescer();
+const linkPreviewHostLimiter = new HostConcurrencyLimiter({ maxConcurrentPerHost: LINK_PREVIEW_MAX_CONCURRENT_PER_HOST });
 
 // Periodic cache cleanup (every 60 seconds) — prevents unbounded memory growth from expired entries.
 setInterval(() => {
@@ -979,46 +1001,85 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
   if (cached) {
     return res.json(cached.data);
   }
-
   // Coalesce concurrent requests for the same URL to avoid duplicate fetches
   try {
-    const preview = await linkPreviewCoalescer.run(
+    const result = await linkPreviewCoalescer.run(
       targetUrl.toString(),
       () => _fetchLinkPreview(rawUrl, targetUrl),
     );
 
-    // Cache the result for future requests
-    linkPreviewCache.set(targetUrl.toString(), preview);
+    // Cache the preview data for future requests (not metrics)
+    linkPreviewCache.set(targetUrl.toString(), result.data);
 
-    return res.json(preview);
+    // Return preview data with performance metrics
+    return res.json({
+      ...result.data,
+      _metrics: {
+        dnsMs: result.metrics.dns,
+        connectHeadersMs: result.metrics.connectHeaders,
+        bodyReadMs: result.metrics.bodyRead,
+        overallMs: result.metrics.overall,
+        retryCount: result.metrics.retryCount,
+      },
+    });
   } catch (error) {
     if (error?.name === 'AbortError') {
       const phase = error.phase || 'overall';
       return res.status(504).json({ error: `Preview fetch timed out during ${phase} phase after ${error.ms}ms` });
     }
     console.warn('Link preview fetch failed:', error.message || error);
+    if (error?.metrics) {
+      console.warn('  metrics:', JSON.stringify(error.metrics));
+    }
     return res.status(502).json({ error: 'Unable to fetch link preview' });
   }
 });
 
 // Internal helper: fetch and extract a link preview with per-phase timeout controls.
 // Returns { url, title, description, image, domain, twitterCard } or throws.
+/**
+ * Exponential backoff with jitter for link preview retries.
+ * @param {number} attempt - 0-based attempt number
+ * @returns {number} delay in ms
+ */
+function _retryDelayMs(attempt) {
+  const exponential = Math.min(
+    LINK_PREVIEW_RETRY_BASE_DELAY_MS * Math.pow(2, attempt),
+    LINK_PREVIEW_RETRY_MAX_DELAY_MS,
+  );
+  // Add uniform jitter: +/-25% of the base delay
+  const jitterRange = exponential * 0.25;
+  return Math.round(exponential + (Math.random() * jitterRange * 2 - jitterRange));
+}
+
 async function _fetchLinkPreview(rawUrl, targetUrl) {
   const MAX_REDIRECTS = 5;
   let currentUrl = targetUrl.toString();
   let redirectCount = 0;
 
   // Overall timeout
+  const overallStart = Date.now();
   const overallTimeoutHandle = setTimeout(() => {
     throw new Error('overall');
   }, LINK_PREVIEW_TIMEOUT_MS);
 
+  // Structured timing metrics (accumulate across hops)
+  const metrics = {
+    dns: 0,
+    connectHeaders: 0,
+    bodyRead: 0,
+    overall: 0,
+    retryCount: 0,
+    retries: [],
+  };
+
   try {
     while (redirectCount < MAX_REDIRECTS) {
       const parsedUrl = new URL(currentUrl);
+      const host = parsedUrl.hostname;
 
       // Validate each hop's hostname (with DNS resolution for rebinding protection)
-      if (await isForbiddenLinkPreviewHost(parsedUrl.hostname, { resolveDns: true })) {
+      if (await isForbiddenLinkPreviewHost(host, { resolveDns: true })) {
         clearTimeout(overallTimeoutHandle);
         throw new Error('Redirect target is a local/private host');
       }
@@ -1027,24 +1088,31 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       const hopController = new AbortController();
 
       // DNS timeout: wrap dns.lookup in a timeout promise
+      const dnsStart = Date.now();
       const dnsTimeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('dns')), LINK_PREVIEW_DNS_TIMEOUT_MS);
       });
 
       try {
         await Promise.race([
-          promisify(dns.lookup)(parsedUrl.hostname),
+          promisify(dns.lookup)(host),
           dnsTimeoutPromise,
         ]);
       } catch (dnsErr) {
+        const dnsElapsed = Date.now() - dnsStart;
         clearTimeout(overallTimeoutHandle);
-        const err = new Error('Preview fetch timed out during dns phase after ' + LINK_PREVIEW_DNS_TIMEOUT_MS + 'ms');
+        metrics.dns += dnsElapsed;
+        metrics.overall = Date.now() - overallStart;
+        const err = new Error('Preview fetch timed out during dns phase after ' + dnsElapsed + 'ms');
         err.phase = 'dns';
-        err.ms = LINK_PREVIEW_DNS_TIMEOUT_MS;
+        err.ms = dnsElapsed;
+        err.metrics = metrics;
         throw err;
       }
+      metrics.dns += Date.now() - dnsStart;
 
       // Connect + headers timeout via AbortController signal
+      const connectStart = Date.now();
       const headersTimeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           hopController.abort(new Error('headers'));
@@ -1057,22 +1125,56 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
           headersTimeoutPromise,
         ]);
       } catch {
+        const connectElapsed = Date.now() - connectStart;
         clearTimeout(overallTimeoutHandle);
-        const err = new Error('Preview fetch timed out during connect+headers phase after ' + (LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS) + 'ms');
+        metrics.connectHeaders += connectElapsed;
+        metrics.overall = Date.now() - overallStart;
+        const err = new Error('Preview fetch timed out during connect+headers phase after ' + connectElapsed + 'ms');
         err.phase = 'connect+headers';
-        err.ms = LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS;
+        err.ms = connectElapsed;
+        err.metrics = metrics;
         throw err;
       }
 
-      const hopRes = await fetch(currentUrl, {
-        method: 'GET',
-        redirect: 'manual',
-        signal: hopController.signal,
-        headers: {
-          Accept: 'text/html,application/xhtml+xml',
-          'User-Agent': LINK_PREVIEW_USER_AGENT,
-        },
-      });
+      // Fetch with per-host concurrency limiting and 5xx retry
+      let hopRes;
+      let attempts = 0;
+
+      while (true) {
+        // Run the fetch under per-host concurrency limiting
+        hopRes = await linkPreviewHostLimiter.run(host, async () => {
+          return fetch(currentUrl, {
+            method: 'GET',
+            redirect: 'manual',
+            signal: hopController.signal,
+            headers: {
+              Accept: 'text/html,application/xhtml+xml',
+              'User-Agent': LINK_PREVIEW_USER_AGENT,
+            },
+          });
+        });
+
+        const hopStatus = hopRes.status;
+
+        // Retry on 5xx (server errors) with jittered backoff
+        if (hopStatus >= 500 && hopStatus < 600 && attempts < LINK_PREVIEW_RETRY_MAX_ATTEMPTS) {
+          attempts++;
+          metrics.retryCount++;
+          const delayMs = _retryDelayMs(attempts - 1);
+          metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
+
+          // Drain the response body before retrying to free socket
+          try { await hopRes.body.cancel(); } catch (_) { /* ignore */ }
+
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        break; // Non-5xx or max retries reached
+      }
+
+      const connectElapsed = Date.now() - connectStart;
+      metrics.connectHeaders += connectElapsed;
 
       let hopStatus = hopRes.status;
       let hopHeaders = hopRes.headers;
@@ -1121,6 +1223,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       let htmlChunks = [];
       let htmlLength = 0;
       const bodyReadController = new AbortController();
+      const bodyReadStart = Date.now();
       const bodyReadTimeoutHandle = setTimeout(() => {
         bodyReadController.abort(new Error('body-read'));
       }, LINK_PREVIEW_BODY_READ_TIMEOUT_MS);
@@ -1140,10 +1243,13 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         clearTimeout(bodyReadTimeoutHandle);
       }
 
+      metrics.bodyRead += Date.now() - bodyReadStart;
+
       const html = htmlChunks.join('').slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
       const finalUrl = hopRes.url || targetUrl.toString();
+      metrics.overall = Date.now() - overallStart;
       clearTimeout(overallTimeoutHandle);
-      return extractLinkPreviewData(html, finalUrl);
+      return { data: extractLinkPreviewData(html, finalUrl), metrics };
     }
 
     // Should not reach here, but handle gracefully
@@ -1151,6 +1257,12 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
     throw new Error('Redirect chain exhausted without a response');
   } catch (error) {
     clearTimeout(overallTimeoutHandle);
+    if (!error.metrics) {
+      metrics.overall = Date.now() - overallStart;
+      error.metrics = metrics;
+    } else {
+      error.metrics.overall = Date.now() - overallStart;
+    }
     if (error?.phase && error?.ms) {
       // Re-throw with timeout metadata
       throw error;
@@ -1160,6 +1272,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       const wrapped = new Error(error.message || 'Preview fetch failed');
       wrapped.phase = 'fetch';
       wrapped.ms = 0;
+      wrapped.metrics = metrics;
       throw wrapped;
     }
     throw error;
@@ -1314,56 +1427,8 @@ function inferAgentNameFromKey(sessionKey) {
   return null;
 }
 
-// ============ REACTION API ENDPOINTS ============
-// ============ REACTION API ENDPOINTS ============
-
-// GET /api/reactions/:sessionKey - Get all reactions for a session (batch load)
-app.get('/api/reactions/:sessionKey', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { sessionKey } = req.params;
-    const allReactions = reactions.getForSession(sessionKey);
-    res.json({ sessionKey, reactions: allReactions });
-  } catch (error) {
-    console.error('Error getting reactions:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/messages/:messageId/reactions - Get reactions for a specific message
-app.get('/api/messages/:messageId/reactions', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { messageId } = req.params;
-    const sessionKey = typeof req.query?.sessionKey === 'string' ? req.query.sessionKey : null;
-    const messageReactions = reactions.getForMessage(messageId, sessionKey);
-    res.json({ messageId, ...(sessionKey ? { sessionKey } : {}), reactions: messageReactions });
-  } catch (error) {
-    console.error('Error getting message reactions:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/messages/:messageId/reactions - Add or remove a reaction (toggle)
-app.post('/api/messages/:messageId/reactions', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { messageId } = req.params;
-    const { emoji, sessionKey } = req.body;
-    const username = req.user?.username || req.user?.email || 'anonymous';
-
-    if (!emoji) {
-      return res.status(400).json({ error: 'Emoji is required' });
-    }
-    if (!sessionKey) {
-      return res.status(400).json({ error: 'Session key is required' });
-    }
-
-    const result = reactions.toggle(messageId, sessionKey, emoji, username);
-    res.json({ success: true, messageId, ...result });
-  } catch (error) {
-    console.error('Error toggling reaction:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
+// Reaction routes extracted to lib/routes/reactions.js
+app.use('/api', createReactionsRoutes({ isAuthenticated, requireSessionAccess, authMode, reactions }));
 app.get('/api/config', (req, res) => {
   return res.json({
     title: APP_TITLE,
