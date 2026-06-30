@@ -21,6 +21,7 @@ const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
 const { requireSessionAccess } = require('./lib/session-auth');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
+const { createReactionsRoutes } = require('./lib/routes/reactions');
 
 const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
@@ -1426,56 +1427,8 @@ function inferAgentNameFromKey(sessionKey) {
   return null;
 }
 
-// ============ REACTION API ENDPOINTS ============
-// ============ REACTION API ENDPOINTS ============
-
-// GET /api/reactions/:sessionKey - Get all reactions for a session (batch load)
-app.get('/api/reactions/:sessionKey', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { sessionKey } = req.params;
-    const allReactions = reactions.getForSession(sessionKey);
-    res.json({ sessionKey, reactions: allReactions });
-  } catch (error) {
-    console.error('Error getting reactions:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/messages/:messageId/reactions - Get reactions for a specific message
-app.get('/api/messages/:messageId/reactions', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { messageId } = req.params;
-    const sessionKey = typeof req.query?.sessionKey === 'string' ? req.query.sessionKey : null;
-    const messageReactions = reactions.getForMessage(messageId, sessionKey);
-    res.json({ messageId, ...(sessionKey ? { sessionKey } : {}), reactions: messageReactions });
-  } catch (error) {
-    console.error('Error getting message reactions:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/messages/:messageId/reactions - Add or remove a reaction (toggle)
-app.post('/api/messages/:messageId/reactions', isAuthenticated, requireSessionAccess(authMode), (req, res) => {
-  try {
-    const { messageId } = req.params;
-    const { emoji, sessionKey } = req.body;
-    const username = req.user?.username || req.user?.email || 'anonymous';
-
-    if (!emoji) {
-      return res.status(400).json({ error: 'Emoji is required' });
-    }
-    if (!sessionKey) {
-      return res.status(400).json({ error: 'Session key is required' });
-    }
-
-    const result = reactions.toggle(messageId, sessionKey, emoji, username);
-    res.json({ success: true, messageId, ...result });
-  } catch (error) {
-    console.error('Error toggling reaction:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
+// Reaction routes extracted to lib/routes/reactions.js
+app.use('/api', createReactionsRoutes({ isAuthenticated, requireSessionAccess, authMode, reactions }));
 app.get('/api/config', (req, res) => {
   return res.json({
     title: APP_TITLE,
