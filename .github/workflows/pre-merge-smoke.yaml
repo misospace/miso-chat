@@ -1,0 +1,50 @@
+name: Pre-merge Smoke
+
+# Integration smoke that boots the server with a stub gateway and exercises
+# /api/health, /login, /api/auth, /api/sessions, and /api/sessions/:key/send.
+# Catches the regression class that #374 / #618 / #620 needed hot-fixes for:
+# frontend boot break, auth-boundary break, and send-message break.
+#
+# This is the pre-merge guard-rail added by issue #630. It runs in addition
+# to the unit-test (tests.yaml) and lint (lint.yaml) jobs and must pass before
+# a PR can be merged — branch protection should mark this job as required.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-merge-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run pre-merge integration smoke
+        run: ./scripts/ci-pre-merge-smoke.sh
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pre-merge-smoke-server-log
+          path: |
+            /tmp/server.log
+            /tmp/stub.log
+          if-no-files-found: ignore

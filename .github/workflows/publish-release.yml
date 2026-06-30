@@ -125,3 +125,21 @@ jobs:
               --title "$VERSION" \
               --generate-notes
           fi
+
+      - name: Post-deploy smoke check
+        env:
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SMOKE_BASE_URL:-}" ]]; then
+            echo "ℹ️ SMOKE_BASE_URL not configured; skipping post-deploy smoke check"
+            exit 0
+          fi
+          echo "🚀 Running post-deploy smoke against ${SMOKE_BASE_URL}"
+          if ! bash scripts/post-deploy-smoke.sh; then
+            echo "❌ Post-deploy smoke check FAILED — release blocked"
+            exit 1
+          fi
+          echo "✅ Post-deploy smoke passed"

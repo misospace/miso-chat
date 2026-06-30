@@ -10,6 +10,7 @@
     "test:ci": "NODE_OPTIONS='--test-reporter=tap' npm test > test-results.json 2>&1",
     "release:readiness": "./scripts/release-readiness-check.sh",
     "smoke:deploy": "./scripts/post-deploy-smoke.sh",
+    "smoke:pre-merge": "./scripts/ci-pre-merge-smoke.sh",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
     "android:sync": "npx cap sync android",
     "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug",

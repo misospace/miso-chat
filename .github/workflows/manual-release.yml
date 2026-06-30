@@ -7,6 +7,10 @@ on:
         description: 'Release version (for example 0.4.15 or v0.4.15)'
         required: true
         type: string
+      deploy_url:
+        description: 'Deploy URL for post-deploy smoke check (e.g. https://miso-chat.example.com). Leave empty to skip.'
+        required: false
+        type: string
 
 concurrency:
   group: manual-release
@@ -92,3 +96,36 @@ jobs:
             --body "Version bump for release ${VERSION}. The release will be published after this PR passes the required checks and merges.")
           gh pr merge "$PR_URL" --auto --squash --delete-branch
           echo "Release PR: $PR_URL"
+
+  post-deploy-smoke:
+    needs: prepare-release
+    if: inputs.deploy_url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout smoke script
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          sparse-checkout: scripts/post-deploy-smoke.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wait for auto-merge and deployment
+        run: |
+          set -euo pipefail
+          echo "⏳ Waiting for release PR to merge and deployment to complete..."
+          # Give the auto-merge and publish-release workflow time to run
+          sleep 120
+
+      - name: Post-deploy smoke check
+        env:
+          SMOKE_BASE_URL: ${{ inputs.deploy_url }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "🚀 Running post-deploy smoke against ${SMOKE_BASE_URL}"
+          if ! bash scripts/post-deploy-smoke.sh; then
+            echo "❌ Post-deploy smoke check FAILED"
+            exit 1
+          fi
+          echo "✅ Post-deploy smoke passed"
