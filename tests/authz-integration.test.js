@@ -235,6 +235,74 @@ test('POST /api/openclaw-stop returns redirect or error when unauthenticated', a
   });
 });
 
+
+test('GET /api/openclaw-status passes auth gate in AUTH_MODE=none', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/openclaw-status?sessionKey=agent:alice:main');
+    // In auth=none, isAuthenticated and requireSessionAccess both pass through.
+    // Gateway will fail (no real gateway), so we expect 500 — NOT 401/403.
+    assert.notEqual(res.statusCode, 401, 'openclaw-status should not return 401 in auth=none');
+    assert.notEqual(res.statusCode, 403, 'openclaw-status should not return 403 in auth=none');
+  });
+});
+
+test('POST /api/openclaw-stop passes auth gate in AUTH_MODE=none', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/openclaw-stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: 'agent:alice:main' }),
+    });
+    // In auth=none, auth passes through. Gateway fails → 500, not 401/403.
+    assert.notEqual(res.statusCode, 401, 'openclaw-stop should not return 401 in auth=none');
+    assert.notEqual(res.statusCode, 403, 'openclaw-stop should not return 403 in auth=none');
+  });
+});
+
+test('GET /api/openclaw-status passes auth gate for authenticated user (local)', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const jar = { _cookies: [] };
+    const req = httpReqWithCookies(jar);
+
+    // Login as alice
+    const loginRes = await req(base, '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'username=alice&password=password',
+    });
+    assert.ok(loginRes.statusCode === 302 || loginRes.statusCode === 200, 'login should succeed');
+
+    // Fetch openclaw-status — auth passes, gateway fails → 500 not 401/403
+    const res = await req(base, '/api/openclaw-status?sessionKey=agent:alice:main');
+    assert.notEqual(res.statusCode, 401, 'openclaw-status should not return 401 for authenticated user');
+    assert.notEqual(res.statusCode, 403, 'openclaw-status should not return 403 for authenticated user');
+  });
+});
+
+test('POST /api/openclaw-stop passes auth gate for authenticated user (local)', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const jar = { _cookies: [] };
+    const req = httpReqWithCookies(jar);
+
+    // Login as alice
+    const loginRes = await req(base, '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'username=alice&password=password',
+    });
+    assert.ok(loginRes.statusCode === 302 || loginRes.statusCode === 200, 'login should succeed');
+
+    // POST openclaw-stop — auth passes, gateway fails → 500 not 401/403
+    const res = await req(base, '/api/openclaw-stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: 'agent:alice:main' }),
+    });
+    assert.notEqual(res.statusCode, 401, 'openclaw-stop should not return 401 for authenticated user');
+    assert.notEqual(res.statusCode, 403, 'openclaw-stop should not return 403 for authenticated user');
+  });
+});
+
 test('GET /api/reactions/:sessionKey returns redirect or error when unauthenticated', async () => {
   await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
     const res = await httpReq(base, '/api/reactions/agent:alice:main');
