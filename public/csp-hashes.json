@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-30T09:05:44.088Z",
+  "generatedAt": "2026-06-30T17:04:08.419Z",
   "algorithm": "sha256",
   "files": {
     "index.html": {
       "hashes": [
-        "'sha256-QOchjouxxi9oDh5EM9osU1d08wHFuOM0KvDWzeOlO1k='"
+        "'sha256-u4K9astEzB/GFokraBJORBBrgWIHI+WYR34jl9al4Vo='"
       ],
       "blockCount": 1
     },
