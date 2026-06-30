@@ -856,122 +856,63 @@ test('GET /api/assistant-identity returns 400 when sessionKey is missing', async
   });
 });
 
+
 // ============================================================
-// SECTION 12: OIDC vs local auth interactions under multi-user settings
+// SECTION 12: Deployment-access model — any authenticated user can access any session
 // ============================================================
 
-test('checkSessionOwnership: OIDC user with email matching session owner', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('Deployment model: any authenticated OIDC user can access any session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
-  const req = {
-    user: { username: 'alice_connor', email: 'alice@example.com' },
-    isAuthenticated: () => true,
-  };
-  // Session key agent:alice:main — owner is "alice"
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), true,
-    'OIDC user email alice@example.com should match session owner alice');
-});
-
-test('checkSessionOwnership: OIDC user with username matching session owner', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = {
-    user: { username: 'alice', email: 'a.smith@company.com' },
-    isAuthenticated: () => true,
-  };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), true,
-    'OIDC user username alice should match session owner alice');
-});
-
-test('checkSessionOwnership: OIDC user with no match is denied', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = {
+  // In the deployment-access model, any authenticated user has access.
+  // User bob can access alice's session because both are authenticated.
+  const reqBob = {
     user: { username: 'bob', email: 'bob@other.com' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), false,
-    'OIDC user bob should not access alice session');
+  assert.equal(checkSessionAccess(reqBob, 'oidc'), true,
+    'Authenticated OIDC user bob should have session access (deployment model)');
 });
 
-test('checkSessionOwnership: Local user with matching username is allowed', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('Deployment model: any authenticated local user can access any session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
-  const req = {
-    user: { username: 'alice' },
-    isAuthenticated: () => true,
-  };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), true,
-    'Local user alice should access alice session');
-});
-
-test('checkSessionOwnership: Local user with non-matching username is denied', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = {
+  // User bob accessing alice's session — allowed because both are authenticated.
+  const reqBob = {
     user: { username: 'bob' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), false,
-    'Local user bob should not access alice session');
+  assert.equal(checkSessionAccess(reqBob, 'local'), true,
+    'Authenticated local user bob should have session access (deployment model)');
 });
 
-test('checkSessionOwnership: Case-insensitive username matching in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('Deployment model: unauthenticated user denied regardless of target session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
-  const req = {
-    user: { username: 'ALICE' },
-    isAuthenticated: () => true,
-  };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), true,
-    'Local user ALICE should match session owner alice (case-insensitive)');
+  const reqAnon = { user: null, isAuthenticated: () => false };
+  assert.equal(checkSessionAccess(reqAnon, 'local'), false,
+    'Unauthenticated user should be denied in local mode');
+  assert.equal(checkSessionAccess(reqAnon, 'oidc'), false,
+    'Unauthenticated user should be denied in oidc mode');
 });
 
-test('checkSessionOwnership: g-agent format with local auth', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
+test('Deployment model: authMode=none bypasses all access checks', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
 
-  const req = {
+  const reqAnon = { user: null, isAuthenticated: () => false };
+  assert.equal(checkSessionAccess(reqAnon, 'none'), true,
+    'authMode=none should allow all access even without authentication');
+});
+
+test('Deployment model: OpenClaw agent session keys treated same as user sessions', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  // Agent session keys (agent:<id>:<session>) are not ownership-bound.
+  // Any authenticated user can access them in the deployment model.
+  const reqUser = {
     user: { username: 'alice' },
     isAuthenticated: () => true,
   };
-  assert.equal(checkSessionOwnership(req, 'g-agent-alice-abc123', 'local'), true,
-    'Local user alice should access g-agent-alice session');
-});
-
-test('checkSessionOwnership: g-agent format mismatch denied in local mode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = {
-    user: { username: 'bob' },
-    isAuthenticated: () => true,
-  };
-  assert.equal(checkSessionOwnership(req, 'g-agent-alice-abc123', 'local'), false,
-    'Local user bob should not access g-agent-alice session');
-});
-
-test('checkSessionOwnership: Unknown session key format is denied by default', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = {
-    user: { username: 'alice' },
-    isAuthenticated: () => true,
-  };
-  assert.equal(checkSessionOwnership(req, 'random-unknown-key', 'local'), false,
-    'Unknown session key format should be denied by default');
-});
-
-test('checkSessionOwnership: Unauthenticated user is always denied regardless of authMode', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'local'), false);
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'oidc'), false);
-});
-
-test('checkSessionOwnership: authMode=none allows all access regardless of session key', async () => {
-  const { checkSessionOwnership } = require('../lib/session-auth');
-
-  const req = { user: null, isAuthenticated: () => false };
-  assert.equal(checkSessionOwnership(req, 'agent:alice:main', 'none'), true);
-  assert.equal(checkSessionOwnership(req, 'random-key', 'none'), true);
+  assert.equal(checkSessionAccess(reqUser, 'local'), true,
+    'Authenticated user should access agent session keys (no ownership boundary)');
 });
