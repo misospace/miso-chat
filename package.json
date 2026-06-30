@@ -35,8 +35,5 @@
     "passport-openidconnect": "^0.1.2",
     "redis": "^6.0.0",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.0"
   }
 }
