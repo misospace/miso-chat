@@ -49,7 +49,15 @@ test('securityHeaders sets required baseline headers including CSP', () => {
 
   // Resource directives
   assert.match(csp, /img-src 'self' data:/);
-  assert.match(csp, /script-src 'self' 'unsafe-inline'/);
+  // Audit #629: inline-script CSP restored via SHA-256 hash pinning.
+  // The browser compares the inline <script> bytes against these hashes and
+  // refuses to execute the script if the hash is missing. This preserves the
+  // defense-in-depth we lost when nonce-based inline-script policy was dropped.
+  assert.match(
+    csp,
+    /script-src 'self' 'sha256-[A-Za-z0-9+/=]+'(?: 'sha256-[A-Za-z0-9+/=]+')*/,
+  );
+  assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
   assert.match(csp, /style-src 'self' 'unsafe-inline'/);
   assert.match(csp, /connect-src 'self' ws: wss:/);
 
