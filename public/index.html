@@ -3129,12 +3129,34 @@
         }
 
         
+        function isSafeImageUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const protocol = parsed.protocol.toLowerCase();
+                if (protocol === 'http:' || protocol === 'https:') return true;
+                if (protocol === 'data:') {
+                    const lower = url.toLowerCase();
+                    return /^data:image\//.test(lower);
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        }
+
     function addImage(url) {
+        if (!isSafeImageUrl(url)) return;
+
         const div = document.createElement('div'); div.className = 'message miso';
         const img = document.createElement('img'); img.src = url; img.loading = 'lazy';
         img.style.maxWidth = '100%'; img.style.borderRadius = '8px'; img.style.marginTop = '8px';
         img.onload = () => { messagesDiv.scrollTop = messagesDiv.scrollHeight; };
-        img.onerror = () => { div.innerHTML = '<a href="' + url + '" target="_blank" style="display:block;padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:8px;">View Image</a>'; div.querySelector('a').style.color = 'var(--accent)'; };
+        img.onerror = () => {
+            const a = document.createElement('a');
+            a.href = url; a.target = '_blank'; a.textContent = 'View Image';
+            a.style.cssText = 'display:block;padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:8px;color:var(--accent);';
+            div.appendChild(a);
+        };
         div.appendChild(img); messagesDiv.appendChild(div);
     }
 
