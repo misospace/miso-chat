@@ -57,6 +57,13 @@ captures/
 #*.jks
 #*.keystore
 
+# Release signing inputs driven by the Android release pipeline — see
+# android/app/build.gradle and RELEASE.md#android-release-signing. These must
+# NEVER be committed; CI injects them from GitHub Actions secrets.
+**/key.properties
+*.keystore
+*.jks
+
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/
