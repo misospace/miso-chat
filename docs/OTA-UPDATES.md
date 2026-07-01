@@ -25,7 +25,7 @@ The OTA update system allows the Miso Chat mobile app to check for and download 
 4. **CI/CD Pipeline** (`.github/workflows/android-release.yml`)
    - Automatic APK building on release
    - Update manifest generation
-   - Optional Capgo sync
+   - Update manifest generation
 
 ## Configuration
 
@@ -39,8 +39,7 @@ CAPGO_APP_ID=chat.openclaw.miso        # Unique app identifier
 CAPGO_UPDATE_METHOD=manual             # 'manual' or 'auto'
 CAPACITOR_UPDATE_CHANNEL=stable        # 'stable' or 'beta'
 
-# Optional: Capgo Cloud Integration
-CAPGO_API_KEY=your_capgo_api_key       # For cloud-based update distribution
+
 ```
 
 ### Capacitor Config
@@ -119,29 +118,14 @@ const result = await updateManager.initialize({
 
 ### Creating a New Release
 
-1. **Update version in `package.json`**:
-   ```json
-   {
-     "version": "1.2.0"
-   }
-   ```
+Releases use a two-step GitHub Actions pipeline: **Manual Release** → **Publish Release**.
 
-2. **Create and push a Git tag**:
-   ```bash
-   git tag v1.2.0
-   git push origin v1.2.0
-   ```
+1. Navigate to **Actions → Manual Release → Run workflow**.
+2. Enter the target version (e.g. `0.4.20` or `v0.4.20`). The workflow normalizes the prefix, opens a version-bump PR, and enables auto-merge.
+3. After required checks pass, the PR merges automatically.
+4. **Publish Release** triggers on merge: it tags the merge commit and creates the GitHub release with generated notes.
 
-3. **Create a GitHub Release**:
-   - Go to GitHub Releases
-   - Create new release with tag `v1.2.0`
-   - Add release notes
-   - Publish release
-
-4. **Automatic Actions**:
-   - CI/CD builds the APK
-   - Update manifest is generated
-   - APK and manifest are uploaded to the release
+The `update-manifest.json` is served from the latest GitHub release via `GET /api/mobile/update-manifest`.
 
 ### Update Manifest Format
 
@@ -165,23 +149,6 @@ const result = await updateManager.initialize({
   }
 }
 ```
-
-## Capgo Cloud Integration (Optional)
-
-For enhanced update distribution, you can optionally integrate with Capgo's cloud service:
-
-1. **Create a Capgo account** at https://capgo.app
-
-2. **Get your API key** from the Capgo dashboard
-
-3. **Add secrets to GitHub**:
-   - `CAPGO_API_KEY`: Your Capgo API key
-   - `CAPGO_APP_ID`: Your Capgo app ID (optional, defaults to `chat.openclaw.miso`)
-
-4. **The CI/CD pipeline will automatically**:
-   - Upload new bundles to Capgo
-   - Manage update channels
-   - Provide analytics on update adoption
 
 ## Update Channels
 
