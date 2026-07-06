@@ -1568,6 +1568,72 @@ async function startServer() {
   });
 }
 
+/**
+ * Graceful shutdown handler.
+ * Closes the HTTP server, drains SSE clients, disconnects the gateway WebSocket manager,
+ * then exits after a timeout budget.
+ */
+async function gracefulShutdown(signal) {
+  console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+
+  const SHUTDOWN_TIMEOUT_MS = 10_000;
+  const shutdownTimer = setTimeout(() => {
+    console.error('⚠️  Graceful shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS).unref();
+
+  try {
+    // 1. Close the HTTP server to stop accepting new connections
+    if (server) {
+      console.log('🔌 Closing HTTP server...');
+      await new Promise((resolve) => {
+        server.close(() => {
+          console.log('✅ HTTP server closed.');
+          resolve();
+        });
+      });
+    }
+
+    // 2. Drain SSE clients
+    if (sseClients.size > 0) {
+      console.log(`📡 Draining ${sseClients.size} SSE client(s)...`);
+      for (const client of sseClients) {
+        try {
+          client.write('event: close\ndata: {}\n\n');
+        } catch {
+          // ignore write errors during shutdown
+        }
+        try {
+          client.destroy();
+        } catch {
+          // ignore destroy errors during shutdown
+        }
+      }
+      sseClients.clear();
+      console.log('✅ SSE clients drained.');
+    }
+
+    // 3. Disconnect gateway WebSocket manager
+    if (gatewayWsManager) {
+      console.log('🔌 Disconnecting Gateway WS manager...');
+      await gatewayWsManager.disconnect();
+      console.log('✅ Gateway WS manager disconnected.');
+    }
+
+    clearTimeout(shutdownTimer);
+    console.log('✅ Graceful shutdown complete.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error during graceful shutdown:', err);
+    clearTimeout(shutdownTimer);
+    process.exit(1);
+  }
+}
+
+// Register graceful shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 if (require.main === module) {
   startServer().catch((err) => {
     console.error('Failed to start server:', err);
@@ -1575,4 +1641,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server, startServer, getReturnTo };
+module.exports = { app, server, startServer, getReturnTo, gracefulShutdown };
