@@ -76,47 +76,30 @@ self.addEventListener('fetch', event => {
 });
 
 self.addEventListener('push', event => {
-  let data = {};
-  try {
-    data = event.data?.json?.() || {};
-  } catch {
-    const text = event.data?.text?.();
-    data = text ? { body: text } : {};
-  }
-
-  const title = data.title || 'OpenClaw Chat';
-  const body = data.body || 'New message';
-
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      tag: data.tag || 'openclaw-chat-new-message',
-      renotify: true,
-      data: {
-        url: data.url || '/'
-      }
-    })
-  );
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || 'OpenClaw';
+  const options = {
+    body: data.body || 'New message',
+    icon: '/favicon-32x32.png',
+    badge: '/favicon-32x32.png',
+    data: data,
+    actions: [
+      { action: 'view', title: 'View' },
+      { action: 'close', title: 'Close' }
+    ]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', event => {
-  const targetUrl = event.notification?.data?.url || '/';
   event.notification.close();
-
-  event.waitUntil((async () => {
-    const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of allClients) {
-      if ('focus' in client) {
-        await client.focus();
-        if ('navigate' in client) {
-          await client.navigate(targetUrl);
-        }
-        return;
+  if (event.action === 'close') return;
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then(clients => {
+      for (const client of clients) {
+        if (client.url.includes('/chat') && 'focus' in client) return client.focus();
       }
-    }
-
-    if (clients.openWindow) {
-      await clients.openWindow(targetUrl);
-    }
-  })());
+      return clients.openWindow('/chat');
+    })
+  );
 });
