@@ -76,7 +76,14 @@ self.addEventListener('fetch', event => {
 });
 
 self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  try {
+    data = event.data?.json?.() || {};
+  } catch {
+    const text = event.data?.text?.();
+    data = text ? { body: text } : {};
+  }
+
   const title = data.title || 'OpenClaw';
   const options = {
     body: data.body || 'New message',
@@ -92,6 +99,7 @@ self.addEventListener('push', event => {
 });
 
 self.addEventListener('notificationclick', event => {
+  const targetUrl = event.notification?.data?.url || '/';
   event.notification.close();
   if (event.action === 'close') return;
   event.waitUntil(
@@ -99,7 +107,7 @@ self.addEventListener('notificationclick', event => {
       for (const client of clients) {
         if (client.url.includes('/chat') && 'focus' in client) return client.focus();
       }
-      return clients.openWindow('/chat');
+      return clients.openWindow(targetUrl);
     })
   );
 });
