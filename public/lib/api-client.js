@@ -31,6 +31,66 @@ const API_BASE_STORAGE_KEY = 'openclaw.apiBaseUrl';
 let mobileAuthInFlight = false;
 let mobileAuthSettledAt = 0;
 
+// ===== CSRF Token Management =====
+let csrfToken = null;
+let csrfTokenPromise = null;
+
+/**
+ * Fetch a fresh CSRF token from the server.
+ * Returns the token string or null on failure.
+ */
+async function fetchCsrfToken() {
+    try {
+        const base = getApiBaseUrl();
+        const url = base ? `${base}/api/csrf-token` : '/api/csrf-token';
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            console.warn('[api-client] Failed to fetch CSRF token:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        if (data && data.csrfToken) {
+            csrfToken = data.csrfToken;
+            return csrfToken;
+        }
+    } catch (err) {
+        console.warn('[api-client] Error fetching CSRF token:', err.message);
+    }
+    return null;
+}
+
+/**
+ * Initialize CSRF token on page load.
+ * Called automatically when the module loads.
+ */
+async function initCsrfToken() {
+    if (csrfTokenPromise) return csrfTokenPromise;
+    csrfTokenPromise = fetchCsrfToken();
+    return csrfTokenPromise;
+}
+
+// Initialize CSRF token on module load (only in browser environment)
+if (typeof window !== 'undefined') {
+    initCsrfToken();
+}
+
+/**
+ * Ensure we have a valid CSRF token.
+ * Fetches one if not already cached.
+ */
+async function ensureCsrfToken() {
+    if (csrfToken) return csrfToken;
+    return await fetchCsrfToken();
+}
+
 /* ---------------------------------------------------------------------------
  * URL helpers
  * ------------------------------------------------------------------------ */
@@ -207,7 +267,17 @@ async function handleAuthRequired() {
  * ------------------------------------------------------------------------ */
 
 /**
+ * Determine whether a request method is state-changing and requires CSRF protection.
+ */
+function isStateChangingMethod(method) {
+    const m = (method || 'GET').toUpperCase();
+    return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
+}
+
+/**
  * Fetch wrapper that automatically handles 401 by triggering auth flow.
+ * Attaches X-CSRF-Token header for state-changing requests (POST, PUT, PATCH, DELETE).
+ * Retries once on 403 with a fresh CSRF token.
  * Delegates to `apiUrl()` for base URL resolution.
  *
  * @param {string} path
@@ -215,10 +285,42 @@ async function handleAuthRequired() {
  * @returns {Promise<Response>}
  */
 async function apiFetch(path, options) {
+    const method = (options && options.method) || 'GET';
+    const needsCsrf = isStateChangingMethod(method);
+
+    // Attach CSRF token for state-changing requests
+    if (needsCsrf) {
+        const token = await ensureCsrfToken();
+        const headers = new Headers(options && options.headers ? options.headers : {});
+        if (token) {
+            headers.set('X-CSRF-Token', token);
+        }
+        options = { ...options, headers };
+    }
+
     const response = await fetch(apiUrl(path), {
         credentials: 'include',
         ...(options || {}),
     });
+
+    // Retry once on 403 with a fresh CSRF token for state-changing requests
+    if (response.status === 403 && needsCsrf) {
+        const freshToken = await fetchCsrfToken();
+        if (freshToken) {
+            const headers = new Headers(options && options.headers ? options.headers : {});
+            headers.set('X-CSRF-Token', freshToken);
+            const retryOptions = { ...options, headers };
+            const retryResponse = await fetch(apiUrl(path), {
+                credentials: 'include',
+                ...retryOptions,
+            });
+
+            if (retryResponse.status === 401) {
+                await handleAuthRequired();
+            }
+            return retryResponse;
+        }
+    }
 
     if (response.status === 401) {
         await handleAuthRequired();
@@ -300,5 +402,6 @@ if (typeof module !== 'undefined' && module.exports) {
         isRetryableSendStatus,
         backendHealthUrl,
         testBackendConnection,
+        isStateChangingMethod,
     };
 }
