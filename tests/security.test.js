@@ -172,3 +172,70 @@ test('csrfOriginCheck blocks state-changing requests from untrusted origins', ()
   assert.equal(res.statusCode, 403);
   assert.deepEqual(res.payload, { error: 'Forbidden: untrusted request origin' });
 });
+
+// ---------------------------------------------------------------------------
+// LOCAL_USERS default credential removal (audit #693)
+// ---------------------------------------------------------------------------
+
+test('setupPassport warns when LOCAL_USERS is unset and local auth is enabled', () => {
+  // Save original env values
+  const originalLocalUsers = process.env.LOCAL_USERS;
+
+  // Capture console.warn output
+  let warnMessage = null;
+  const originalWarn = console.warn;
+  console.warn = (msg) => { warnMessage = msg; };
+
+  try {
+    // Clear LOCAL_USERS
+    delete process.env.LOCAL_USERS;
+
+    // Clear the require cache so setupPassport re-evaluates env vars
+    delete require.cache[require.resolve('../lib/auth-session')];
+    const { setupPassport } = require('../lib/auth-session');
+
+    setupPassport({ authMode: 'local', localAuthEnabled: true, oidcEnabled: false });
+
+    assert.ok(
+      warnMessage != null,
+      'console.warn should be called when LOCAL_USERS is not set',
+    );
+    assert.match(
+      warnMessage,
+      /LOCAL_USERS.*not set/i,
+      'warning message should mention LOCAL_USERS',
+    );
+  } finally {
+    console.warn = originalWarn;
+    // Restore env
+    if (originalLocalUsers !== undefined) {
+      process.env.LOCAL_USERS = originalLocalUsers;
+    } else {
+      delete process.env.LOCAL_USERS;
+    }
+  }
+});
+
+test('setupPassport does not use hardcoded default credentials when LOCAL_USERS is unset', () => {
+  // Verify the source code does not contain hardcoded default credentials
+  const fs = require('fs');
+  const path = require('path');
+
+  const authSessionPath = path.resolve(__dirname, '../lib/auth-session.js');
+  const sourceCode = fs.readFileSync(authSessionPath, 'utf-8');
+
+  // Check that the hardcoded default "admin:password123" is not present
+  assert.doesNotMatch(
+    sourceCode,
+    /admin:password123/,
+    'auth-session.js should not contain hardcoded default credentials',
+  );
+
+  // Verify that LOCAL_USERS fallback does not include any default users
+  // The pattern should be something like: (process.env.LOCAL_USERS || '').split(',')
+  assert.match(
+    sourceCode,
+    /process\.env\.LOCAL_USERS.*\|\|.*['"]['"]/,
+    'LOCAL_USERS should fall back to empty string when not set',
+  );
+});
