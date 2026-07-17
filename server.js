@@ -379,13 +379,13 @@ const sessionMiddleware = session(sessionConfig);
 app.use(sessionMiddleware);
 
 // Passport initialization and strategy setup (delegated to lib/auth-session.js)
-const passportInstance = setupPassport({ authMode, localAuthEnabled, oidcEnabled });
+const passportInstance = setupPassport({ localAuthEnabled });
 app.use(passportInstance.initialize());
 app.use(passportInstance.session());
 
 // Auth helpers and routes (delegated to lib/auth-session.js)
 const isAuthenticated = buildIsAuthenticated(authMode);
-registerAuthRoutes(app, { authMode, localAuthEnabled, oidcEnabled, isAuthenticated, authLimiter, passport: passportInstance });
+registerAuthRoutes(app, { authMode, localAuthEnabled, oidcEnabled, authLimiter });
 
 // GET /api/mobile/update-manifest - Serve update manifest from latest GitHub release (hardened)
 app.get("/api/mobile/update-manifest", async (req, res) => {
