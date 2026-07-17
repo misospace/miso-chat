@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+// Release signing configuration is driven by android/key.properties, which is
+// gitignored. CI populates the file from GitHub Actions secrets
+// (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+// ANDROID_KEY_PASSWORD) and writes the base64-decoded keystore to
+// android/app/<storeFile>. Local developers copy android/key.properties from a
+// trusted source. The release build type fails fast (with a clear error
+// message) when the properties are missing so we never publish unsigned APKs.
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "chat.openclaw.miso"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +29,37 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (!keystorePropertiesFile.exists()) {
+                // No key.properties — leave the signing config empty so the
+                // release build type below fails with a useful error instead
+                // of silently publishing an unsigned APK.
+                storeFile = null
+                storePassword = ""
+                keyAlias = ""
+                keyPassword = ""
+            } else {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                throw new GradleException(
+                    "android/key.properties is missing. Android release builds cannot be produced " +
+                    "without a configured signing keystore; see RELEASE.md#android-release-signing " +
+                    "for the required environment and secrets."
+                )
+            }
         }
     }
 }

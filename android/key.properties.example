@@ -1,0 +1,21 @@
+# Template for android/key.properties — this file is a reference only and is
+# committed so that contributors know the exact shape required by
+# android/app/build.gradle. Do NOT commit a populated copy.
+#
+# CI populates android/key.properties at build time from GitHub Actions
+# secrets. Locally, copy this file to android/key.properties and fill in the
+# values from your keystore. See RELEASE.md#android-release-signing for the
+# full setup steps and required secrets.
+
+# Path to the keystore file, relative to android/app/. CI sets this to
+# "release.keystore" (decoded from the ANDROID_KEYSTORE_BASE64 secret).
+storeFile=release.keystore
+
+# Keystore password (ANDROID_KEYSTORE_PASSWORD).
+storePassword=replace-with-keystore-password
+
+# Key alias (ANDROID_KEY_ALIAS).
+keyAlias=replace-with-key-alias
+
+# Key password (ANDROID_KEY_PASSWORD).
+keyPassword=replace-with-key-password

@@ -235,6 +235,74 @@ test('POST /api/openclaw-stop returns redirect or error when unauthenticated', a
   });
 });
 
+
+test('GET /api/openclaw-status passes auth gate in AUTH_MODE=none', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/openclaw-status?sessionKey=agent:alice:main');
+    // In auth=none, isAuthenticated and requireSessionAccess both pass through.
+    // Gateway will fail (no real gateway), so we expect 500 — NOT 401/403.
+    assert.notEqual(res.statusCode, 401, 'openclaw-status should not return 401 in auth=none');
+    assert.notEqual(res.statusCode, 403, 'openclaw-status should not return 403 in auth=none');
+  });
+});
+
+test('POST /api/openclaw-stop passes auth gate in AUTH_MODE=none', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/openclaw-stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: 'agent:alice:main' }),
+    });
+    // In auth=none, auth passes through. Gateway fails → 500, not 401/403.
+    assert.notEqual(res.statusCode, 401, 'openclaw-stop should not return 401 in auth=none');
+    assert.notEqual(res.statusCode, 403, 'openclaw-stop should not return 403 in auth=none');
+  });
+});
+
+test('GET /api/openclaw-status passes auth gate for authenticated user (local)', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const jar = { _cookies: [] };
+    const req = httpReqWithCookies(jar);
+
+    // Login as alice
+    const loginRes = await req(base, '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'username=alice&password=password',
+    });
+    assert.ok(loginRes.statusCode === 302 || loginRes.statusCode === 200, 'login should succeed');
+
+    // Fetch openclaw-status — auth passes, gateway fails → 500 not 401/403
+    const res = await req(base, '/api/openclaw-status?sessionKey=agent:alice:main');
+    assert.notEqual(res.statusCode, 401, 'openclaw-status should not return 401 for authenticated user');
+    assert.notEqual(res.statusCode, 403, 'openclaw-status should not return 403 for authenticated user');
+  });
+});
+
+test('POST /api/openclaw-stop passes auth gate for authenticated user (local)', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const jar = { _cookies: [] };
+    const req = httpReqWithCookies(jar);
+
+    // Login as alice
+    const loginRes = await req(base, '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'username=alice&password=password',
+    });
+    assert.ok(loginRes.statusCode === 302 || loginRes.statusCode === 200, 'login should succeed');
+
+    // POST openclaw-stop — auth passes, gateway fails → 500 not 401/403
+    const res = await req(base, '/api/openclaw-stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: 'agent:alice:main' }),
+    });
+    assert.notEqual(res.statusCode, 401, 'openclaw-stop should not return 401 for authenticated user');
+    assert.notEqual(res.statusCode, 403, 'openclaw-stop should not return 403 for authenticated user');
+  });
+});
+
 test('GET /api/reactions/:sessionKey returns redirect or error when unauthenticated', async () => {
   await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
     const res = await httpReq(base, '/api/reactions/agent:alice:main');
@@ -590,4 +658,329 @@ test('GET /api/sessions/:key/send-stream requires authentication', async () => {
     // Without auth cookie, should NOT return 200
     assert.notEqual(res.statusCode, 200, '/api/sessions/:key/send-stream should not return 200 without auth');
   });
+});
+
+// ============================================================
+// SECTION 10: /api/csrf-token — issue, rotate, reject
+// ============================================================
+
+/**
+ * Cookie-aware HTTP helper for CSRF token flow tests.
+ * Maintains a cookie jar across requests.
+ */
+function httpReqWithCookies(cookieJar) {
+  return function(base, path, options = {}) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(path, base);
+      const headers = Object.assign({}, options.headers || {});
+      if (cookieJar._cookies) {
+        headers['Cookie'] = cookieJar._cookies.map(c => c.name + '=' + c.value).join('; ');
+      }
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: options.method || 'GET',
+        headers: headers,
+      }, (res) => {
+        // Capture set-cookie headers for the jar
+        const setCookies = res.headers['set-cookie'];
+        if (Array.isArray(setCookies)) {
+          for (const sc of setCookies) {
+            const eqIdx = sc.indexOf('=');
+            if (eqIdx > 0) {
+              const name = sc.substring(0, eqIdx).trim();
+              const valPart = sc.substring(eqIdx + 1);
+              const semicolonIdx = valPart.indexOf(';');
+              const value = (semicolonIdx > 0 ? valPart.substring(0, semicolonIdx) : valPart).trim();
+              cookieJar._cookies.push({ name, value });
+            }
+          }
+        }
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          let parsed = null;
+          try { parsed = JSON.parse(body); } catch { /* keep raw */ }
+          resolve({ statusCode: res.statusCode, headers: res.headers, body, json: parsed });
+        });
+      });
+      req.on('error', reject);
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+  };
+}
+
+test('GET /api/csrf-token requires authentication in local mode', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const res = await httpReq(base, '/api/csrf-token');
+    // Without auth cookie, should NOT return 200 with a token — either redirect or error
+    assert.notEqual(res.statusCode, 200, '/api/csrf-token should not return 200 without auth');
+  });
+});
+
+test('GET /api/csrf-token is accessible without auth when AUTH_MODE=none', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/csrf-token');
+    // In auth=none mode, isAuthenticated passes through; should return token
+    assert.equal(res.statusCode, 200, '/api/csrf-token should return 200 in auth=none mode');
+    assert.ok(res.json?.csrfToken, 'response should contain csrfToken');
+    assert.ok(res.json.csrfToken.length >= 32, 'csrfToken should be at least 32 hex chars');
+  });
+});
+
+test('GET /api/csrf-token issues a token after login (local auth)', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const jar = { _cookies: [] };
+    const req = httpReqWithCookies(jar);
+
+    // Login as alice
+    const loginRes = await req(base, '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'username=alice&password=password',
+    });
+    // Login redirects on success (302) or similar; cookie should be set
+    assert.ok(loginRes.statusCode === 302 || loginRes.statusCode === 200, 'login should succeed');
+
+    // Fetch CSRF token
+    const csrfRes = await req(base, '/api/csrf-token');
+    assert.equal(csrfRes.statusCode, 200, 'csrf-token should return 200 after login');
+    assert.ok(csrfRes.json?.csrfToken, 'response should contain csrfToken');
+    assert.ok(csrfRes.json.csrfToken.length >= 32, 'csrfToken should be at least 32 hex chars');
+  });
+});
+
+test('CSRF token rotation: valid token is accepted then rotated (unit)', async () => {
+  const security = require('../security');
+  const crypto = require('node:crypto');
+
+  // Simulate a session with a CSRF token
+  const session = { csrfToken: 'a'.repeat(64) };
+  const req = {
+    method: 'POST',
+    session: session,
+    get(header) {
+      if (header === 'origin') return 'http://localhost:3000';
+      if (header === 'x-csrf-token') return 'a'.repeat(64);
+      return '';
+    },
+  };
+  let resStatus = null, resBody = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) { resBody = body; return this; },
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1]; // csrfTokenCheck is index 1 in exports array
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true, 'Valid token should pass through to next()');
+  assert.notEqual(session.csrfToken, 'a'.repeat(64), 'Token should be rotated after use');
+});
+
+test('CSRF token rejection: wrong token is denied with 403 (unit)', async () => {
+  const security = require('../security');
+
+  const session = { csrfToken: 'a'.repeat(64) };
+  const req = {
+    method: 'POST',
+    session: session,
+    get(header) {
+      if (header === 'origin') return 'http://localhost:3000';
+      if (header === 'x-csrf-token') return 'b'.repeat(64); // wrong token
+      return '';
+    },
+  };
+  let resStatus = null, resBody = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) { resBody = body; return this; },
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1];
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, false, 'Wrong token should NOT call next()');
+  assert.equal(resStatus, 403, 'Wrong token should return 403');
+});
+
+test('CSRF token rejection: missing X-CSRF-Token header is denied (unit)', async () => {
+  const security = require('../security');
+
+  const session = { csrfToken: 'a'.repeat(64) };
+  const req = {
+    method: 'POST',
+    session: session,
+    get(header) {
+      if (header === 'origin') return 'http://localhost:3000';
+      return ''; // no X-CSRF-Token
+    },
+  };
+  let resStatus = null, resBody = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) { resBody = body; return this; },
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1];
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, false, 'Missing token should NOT call next()');
+  assert.equal(resStatus, 403, 'Missing token should return 403');
+});
+
+test('CSRF check is skipped for non-browser requests (no Origin/Referer)', async () => {
+  const security = require('../security');
+
+  const session = { csrfToken: 'a'.repeat(64) };
+  const req = {
+    method: 'POST',
+    session: session,
+    get(header) {
+      return ''; // no Origin, no Referer — non-browser client
+    },
+  };
+  let resStatus = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) {},
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1];
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true, 'Non-browser requests should skip CSRF check');
+});
+
+test('CSRF check is skipped for GET requests', async () => {
+  const security = require('../security');
+
+  const session = { csrfToken: 'a'.repeat(64) };
+  const req = {
+    method: 'GET',
+    session: session,
+    get(header) {
+      if (header === 'origin') return 'http://localhost:3000';
+      return '';
+    },
+  };
+  let resStatus = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) {},
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1];
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true, 'GET requests should skip CSRF token check');
+});
+
+test('CSRF check is skipped when session has no csrfToken', async () => {
+  const security = require('../security');
+
+  const session = {}; // no csrfToken yet
+  const req = {
+    method: 'POST',
+    session: session,
+    get(header) {
+      if (header === 'origin') return 'http://localhost:3000';
+      return '';
+    },
+  };
+  let resStatus = null;
+  const res = {
+    status(code) { resStatus = code; return this; },
+    json(body) {},
+  };
+  let nextCalled = false;
+  const csrfCheck = security[1];
+
+  csrfCheck(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true, 'Missing session.csrfToken should skip check (not block)');
+});
+
+// ============================================================
+// SECTION 11: /api/assistant-identity denial paths
+// ============================================================
+
+test('GET /api/assistant-identity requires authentication', async () => {
+  await withServer({ AUTH_MODE: 'local', LOCAL_USERS: 'alice:password' }, async (base) => {
+    const res = await httpReq(base, '/api/assistant-identity?sessionKey=agent:alice:main');
+    // Without auth cookie, should NOT return 200 — either redirect or error
+    assert.notEqual(res.statusCode, 200, '/api/assistant-identity should not return 200 without auth');
+  });
+});
+
+test('GET /api/assistant-identity returns 400 when sessionKey is missing', async () => {
+  await withServer({ AUTH_MODE: 'none' }, async (base) => {
+    const res = await httpReq(base, '/api/assistant-identity');
+    // In auth=none mode, isAuthenticated passes; but sessionKey is required
+    // The endpoint returns 400 when sessionKey is missing
+    assert.equal(res.statusCode, 400, '/api/assistant-identity should return 400 without sessionKey');
+  });
+});
+
+
+// ============================================================
+// SECTION 12: Deployment-access model — any authenticated user can access any session
+// ============================================================
+
+test('Deployment model: any authenticated OIDC user can access any session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  // In the deployment-access model, any authenticated user has access.
+  // User bob can access alice's session because both are authenticated.
+  const reqBob = {
+    user: { username: 'bob', email: 'bob@other.com' },
+    isAuthenticated: () => true,
+  };
+  assert.equal(checkSessionAccess(reqBob, 'oidc'), true,
+    'Authenticated OIDC user bob should have session access (deployment model)');
+});
+
+test('Deployment model: any authenticated local user can access any session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  // User bob accessing alice's session — allowed because both are authenticated.
+  const reqBob = {
+    user: { username: 'bob' },
+    isAuthenticated: () => true,
+  };
+  assert.equal(checkSessionAccess(reqBob, 'local'), true,
+    'Authenticated local user bob should have session access (deployment model)');
+});
+
+test('Deployment model: unauthenticated user denied regardless of target session', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  const reqAnon = { user: null, isAuthenticated: () => false };
+  assert.equal(checkSessionAccess(reqAnon, 'local'), false,
+    'Unauthenticated user should be denied in local mode');
+  assert.equal(checkSessionAccess(reqAnon, 'oidc'), false,
+    'Unauthenticated user should be denied in oidc mode');
+});
+
+test('Deployment model: authMode=none bypasses all access checks', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  const reqAnon = { user: null, isAuthenticated: () => false };
+  assert.equal(checkSessionAccess(reqAnon, 'none'), true,
+    'authMode=none should allow all access even without authentication');
+});
+
+test('Deployment model: OpenClaw agent session keys treated same as user sessions', async () => {
+  const { checkSessionAccess } = require('../lib/session-auth');
+
+  // Agent session keys (agent:<id>:<session>) are not ownership-bound.
+  // Any authenticated user can access them in the deployment model.
+  const reqUser = {
+    user: { username: 'alice' },
+    isAuthenticated: () => true,
+  };
+  assert.equal(checkSessionAccess(reqUser, 'local'), true,
+    'Authenticated user should access agent session keys (no ownership boundary)');
 });

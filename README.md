@@ -243,6 +243,36 @@ manager.on('reconnect-failed', (err) => {
 
 ## Changelog
 
+### v0.4.19 (2026-06-23)
+- Restore shared session access
+
+### v0.4.18 (2026-06-23)
+- Restore frontend startup
+
+### v0.4.17 (2026-06-22)
+- Fix render-utils.js module not defined and Rocket Loader script conflict
+
+### v0.4.16 (2026-06-22)
+- Release pipeline: support publish recovery, recognize app PR authors, detect missing tags, avoid tag visibility race
+- Fix service worker serving stale HTML with old CSP headers
+- Fix invalid action SHAs in android-release workflow
+
+### v0.4.15 (2026-06-22)
+- Route manual-release through PR + auto-merge
+- Remove CSP nonce that blocks inline scripts
+- Commit missing JS files (present in Docker image but not git)
+- Automate protected releases
+
+### v0.4.14 (2026-06-16)
+- Harden mobile OTA manifest trust with validation
+- Add session/operation authorization boundary and route-level CSRF tokens
+- Consolidate update manager, remove stale APK logic
+- Add SESSION_COOKIE_DOMAIN env var for subdomain isolation
+- Repair release/docs drift (changelog + OTA docs)
+- Make lint actually run ESLint on server.js, lib/, and tests/
+- Add authorization/integration test matrix
+- Harden container runtime defaults
+
 ### v0.4.13 (2026-06-04)
 - Added release runbook to AGENTS.md
 - Updated `@capgo/capacitor-updater` 8.47.5 → 8.47.6

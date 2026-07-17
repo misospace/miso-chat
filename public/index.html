@@ -25,6 +25,10 @@
     <script data-cfasync="false" src="/lib/reaction-events-browser.js"></script>
     <!-- Extracted API client & backend URL management -->
     <script data-cfasync="false" src="/lib/api-client.js"></script>
+    <!-- Capacitor Secure Storage wrapper -->
+    <script data-cfasync="false" src="/lib/secure-storage.js"></script>
+    <!-- Session key persistence and hydration -->
+    <script data-cfasync="false" src="/lib/session-key-hydration.js"></script>
     
     <style>
         :root {
@@ -1177,7 +1181,7 @@
     </div>
 
     <script>
-        const SESSION_STORAGE_KEY = 'miso.selectedSessionKey';
+
         const QUEUE_STORAGE_KEY = 'miso.pendingQueue';
         const MAX_QUEUE_SIZE = 50;
         const QUEUE_ITEM_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -1258,114 +1262,14 @@
         let sseTypingActive = false;
         let historyMessageKeys = new Set();
         let localAssistantEchoes = new Map();
-        let storedSessionKey = null;
+        // storedSessionKey is managed by lib/session-key-hydration.js
+        if (typeof storedSessionKey === 'undefined') var storedSessionKey = null;
         let attachmentConfig = {
             maxBytes: 5 * 1024 * 1024,
             allowedTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
             uploadPath: '/api/attachments',
         };
         let pendingAttachment = null;
-
-        function getSecureStoragePlugin() {
-            if (!isNativeCapacitor()) return null;
-            const plugins = window.Capacitor?.Plugins;
-            if (!plugins) return null;
-            return (
-                plugins.SecureStoragePlugin
-                || plugins.CapacitorSecureStoragePlugin
-                || plugins.SecureStorage
-                || null
-            );
-        }
-
-        async function secureStorageGet(key) {
-            const plugin = getSecureStoragePlugin();
-            if (!plugin || typeof plugin.get !== 'function') return null;
-            try {
-                const result = await plugin.get({ key });
-                if (typeof result === 'string') return result;
-                return typeof result?.value === 'string' ? result.value : null;
-            } catch {
-                return null;
-            }
-        }
-
-        async function secureStorageSet(key, value) {
-            const plugin = getSecureStoragePlugin();
-            if (!plugin || typeof plugin.set !== 'function') return false;
-            try {
-                await plugin.set({ key, value: String(value) });
-                return true;
-            } catch {
-                return false;
-            }
-        }
-
-        async function secureStorageRemove(key) {
-            const plugin = getSecureStoragePlugin();
-            if (!plugin || typeof plugin.remove !== 'function') return;
-            try {
-                await plugin.remove({ key });
-            } catch {
-                // ignore secure storage remove errors
-            }
-        }
-
-        async function hydrateStoredSessionKey() {
-            const secureValue = await secureStorageGet(SESSION_STORAGE_KEY);
-            if (secureValue) {
-                storedSessionKey = secureValue;
-                try {
-                    localStorage.removeItem(SESSION_STORAGE_KEY);
-                } catch {
-                    // ignore local storage errors
-                }
-                return;
-            }
-
-            const localValue = localStorage.getItem(SESSION_STORAGE_KEY);
-            if (!localValue) return;
-
-            storedSessionKey = localValue;
-            const migrated = await secureStorageSet(SESSION_STORAGE_KEY, localValue);
-            if (migrated) {
-                try {
-                    localStorage.removeItem(SESSION_STORAGE_KEY);
-                } catch {
-                    // ignore local storage errors
-                }
-            }
-        }
-
-        async function persistStoredSessionKey(sessionKey) {
-            storedSessionKey = sessionKey || null;
-
-            if (!sessionKey) {
-                await secureStorageRemove(SESSION_STORAGE_KEY);
-                try {
-                    localStorage.removeItem(SESSION_STORAGE_KEY);
-                } catch {
-                    // ignore local storage errors
-                }
-                return;
-            }
-
-            const savedToSecureStorage = await secureStorageSet(SESSION_STORAGE_KEY, sessionKey);
-            if (savedToSecureStorage) {
-                try {
-                    localStorage.removeItem(SESSION_STORAGE_KEY);
-                } catch {
-                    // ignore local storage errors
-                }
-                return;
-            }
-
-            localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
-        }
-
-        async function clearAuthLocalState() {
-            await persistStoredSessionKey(null);
-        }
 
          const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
         const TABLE_REGEX = /\|[^\n]+\|\n\|[-:|\s]+\|\n((?:\|[^\n]+\|\n?)+)/g;
@@ -3225,12 +3129,34 @@
         }
 
         
+        function isSafeImageUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const protocol = parsed.protocol.toLowerCase();
+                if (protocol === 'http:' || protocol === 'https:') return true;
+                if (protocol === 'data:') {
+                    const lower = url.toLowerCase();
+                    return /^data:image\//.test(lower);
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        }
+
     function addImage(url) {
+        if (!isSafeImageUrl(url)) return;
+
         const div = document.createElement('div'); div.className = 'message miso';
         const img = document.createElement('img'); img.src = url; img.loading = 'lazy';
         img.style.maxWidth = '100%'; img.style.borderRadius = '8px'; img.style.marginTop = '8px';
         img.onload = () => { messagesDiv.scrollTop = messagesDiv.scrollHeight; };
-        img.onerror = () => { div.innerHTML = '<a href="' + url + '" target="_blank" style="display:block;padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:8px;">View Image</a>'; div.querySelector('a').style.color = 'var(--accent)'; };
+        img.onerror = () => {
+            const a = document.createElement('a');
+            a.href = url; a.target = '_blank'; a.textContent = 'View Image';
+            a.style.cssText = 'display:block;padding:12px;background:var(--bg-secondary);border-radius:8px;margin-top:8px;color:var(--accent);';
+            div.appendChild(a);
+        };
         div.appendChild(img); messagesDiv.appendChild(div);
     }
 

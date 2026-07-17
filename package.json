@@ -10,10 +10,14 @@
     "test:ci": "NODE_OPTIONS='--test-reporter=tap' npm test > test-results.json 2>&1",
     "release:readiness": "./scripts/release-readiness-check.sh",
     "smoke:deploy": "./scripts/post-deploy-smoke.sh",
+    "smoke:pre-merge": "./scripts/ci-pre-merge-smoke.sh",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
     "android:sync": "npx cap sync android",
     "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug",
-    "android:run": "npx cap sync android && npx cap run android"
+    "android:run": "npx cap sync android && npx cap run android",
+    "build:csp-hashes": "node scripts/build-csp-hashes.js",
+    "check:csp-hashes": "node scripts/build-csp-hashes.js --check",
+    "check:duplicate-modules": "node scripts/check-duplicate-modules.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",
@@ -35,8 +39,5 @@
     "passport-local": "^1.0.0",
     "redis": "^6.0.0",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.0"
   }
 }
