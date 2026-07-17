@@ -1,1 +1,2904 @@
-{}
+
+> miso-chat@0.4.19 test
+> node --check server.js && node --require ./tests/setup/load-first.js --test tests/*.test.js
+
+TAP version 13
+# Subtest: release build type reads android/key.properties via signingConfig
+ok 1 - release build type reads android/key.properties via signingConfig
+  ---
+  duration_ms: 1.023706
+  type: 'test'
+  ...
+# Subtest: android/.gitignore keeps key.properties, *.keystore and *.jks out of the repo
+ok 2 - android/.gitignore keeps key.properties, *.keystore and *.jks out of the repo
+  ---
+  duration_ms: 0.151153
+  type: 'test'
+  ...
+# Subtest: android/key.properties.example exists and matches the key names read by gradle
+ok 3 - android/key.properties.example exists and matches the key names read by gradle
+  ---
+  duration_ms: 0.180966
+  type: 'test'
+  ...
+# Subtest: RELEASE.md documents the Android release signing contract
+ok 4 - RELEASE.md documents the Android release signing contract
+  ---
+  duration_ms: 0.159932
+  type: 'test'
+  ...
+# Subtest: android-release workflow injects signing material from GitHub Actions secrets
+ok 5 - android-release workflow injects signing material from GitHub Actions secrets
+  ---
+  duration_ms: 0.339144
+  type: 'test'
+  ...
+# Subtest: gradle wrapper script still exists and is executable for signed-release flows
+ok 6 - gradle wrapper script still exists and is executable for signed-release flows
+  ---
+  duration_ms: 4.090708
+  type: 'test'
+  ...
+# Subtest: send queue retries only transient HTTP failures
+ok 7 - send queue retries only transient HTTP failures
+  ---
+  duration_ms: 0.576622
+  type: 'test'
+  ...
+# Subtest: isStateChangingMethod returns true for POST, PUT, PATCH, DELETE
+ok 8 - isStateChangingMethod returns true for POST, PUT, PATCH, DELETE
+  ---
+  duration_ms: 0.116129
+  type: 'test'
+  ...
+# Subtest: isStateChangingMethod returns false for safe methods
+ok 9 - isStateChangingMethod returns false for safe methods
+  ---
+  duration_ms: 0.078373
+  type: 'test'
+  ...
+# Subtest: isStateChangingMethod is case-insensitive
+ok 10 - isStateChangingMethod is case-insensitive
+  ---
+  duration_ms: 0.077657
+  type: 'test'
+  ...
+# Subtest: isStateChangingMethod defaults to GET for undefined/null
+ok 11 - isStateChangingMethod defaults to GET for undefined/null
+  ---
+  duration_ms: 0.080368
+  type: 'test'
+  ...
+# ◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: GET / redirects to login when unauthenticated
+ok 12 - GET / redirects to login when unauthenticated
+  ---
+  duration_ms: 17.274545
+  type: 'test'
+  ...
+# Subtest: GET /api/auth reports unauthenticated local auth state
+ok 13 - GET /api/auth reports unauthenticated local auth state
+  ---
+  duration_ms: 3.959829
+  type: 'test'
+  ...
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ SESSION_COOKIE_SAMESITE=none without secure cookies may be rejected by modern browsers
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ Session store: MemoryStore (REDIS_URL not set, ALLOW_MEMORY_STORE=true)
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: parseBooleanEnv
+    # Subtest: returns true for truthy strings
+    ok 1 - returns true for truthy strings
+      ---
+      duration_ms: 0.486964
+      type: 'test'
+      ...
+    # Subtest: returns false for falsy strings
+    ok 2 - returns false for falsy strings
+      ---
+      duration_ms: 0.103219
+      type: 'test'
+      ...
+    # Subtest: falls back to provided default when value is empty or undefined
+    ok 3 - falls back to provided default when value is empty or undefined
+      ---
+      duration_ms: 0.081522
+      type: 'test'
+      ...
+    # Subtest: returns undefined when no fallback provided and value is missing
+    ok 4 - returns undefined when no fallback provided and value is missing
+      ---
+      duration_ms: 0.074709
+      type: 'test'
+      ...
+    1..4
+ok 14 - parseBooleanEnv
+  ---
+  duration_ms: 1.423682
+  type: 'suite'
+  ...
+# Subtest: parseSameSiteEnv
+    # Subtest: returns valid same-site values case-insensitively
+    ok 1 - returns valid same-site values case-insensitively
+      ---
+      duration_ms: 0.140254
+      type: 'test'
+      ...
+    # Subtest: falls back to provided default for invalid values
+    ok 2 - falls back to provided default for invalid values
+      ---
+      duration_ms: 0.066411
+      type: 'test'
+      ...
+    # Subtest: returns undefined when no fallback provided and value is missing
+    ok 3 - returns undefined when no fallback provided and value is missing
+      ---
+      duration_ms: 0.065845
+      type: 'test'
+      ...
+    1..3
+ok 15 - parseSameSiteEnv
+  ---
+  duration_ms: 0.415666
+  type: 'suite'
+  ...
+# Subtest: getReturnTo
+    # Subtest: returns the return_to value when it is a safe relative path
+    ok 1 - returns the return_to value when it is a safe relative path
+      ---
+      duration_ms: 0.231285
+      type: 'test'
+      ...
+    # Subtest: returns the default fallback when no return_to is provided
+    ok 2 - returns the default fallback when no return_to is provided
+      ---
+      duration_ms: 0.089138
+      type: 'test'
+      ...
+    # Subtest: rejects dangerous protocols (javascript, data, file)
+    ok 3 - rejects dangerous protocols (javascript, data, file)
+      ---
+      duration_ms: 0.148452
+      type: 'test'
+      ...
+    # Subtest: normalizes path traversal sequences
+    ok 4 - normalizes path traversal sequences
+      ---
+      duration_ms: 0.161277
+      type: 'test'
+      ...
+    # Subtest: rejects null bytes in the path
+    ok 5 - rejects null bytes in the path
+      ---
+      duration_ms: 0.084643
+      type: 'test'
+      ...
+    1..5
+ok 16 - getReturnTo
+  ---
+  duration_ms: 0.890654
+  type: 'suite'
+  ...
+# Subtest: getOidcLabel
+    # Subtest: returns OIDC_ISSUER_LABEL when set
+    ok 1 - returns OIDC_ISSUER_LABEL when set
+      ---
+      duration_ms: 0.158447
+      type: 'test'
+      ...
+    # Subtest: falls back to OIDC_PROVIDER_NAME when OIDC_ISSUER_LABEL is not set
+    ok 2 - falls back to OIDC_PROVIDER_NAME when OIDC_ISSUER_LABEL is not set
+      ---
+      duration_ms: 0.062072
+      type: 'test'
+      ...
+    # Subtest: derives label from OIDC_ISSUER hostname when neither label is set
+    ok 3 - derives label from OIDC_ISSUER hostname when neither label is set
+      ---
+      duration_ms: 0.119983
+      type: 'test'
+      ...
+    # Subtest: defaults to "OIDC" when no issuer info is provided
+    ok 4 - defaults to "OIDC" when no issuer info is provided
+      ---
+      duration_ms: 0.051291
+      type: 'test'
+      ...
+    1..4
+ok 17 - getOidcLabel
+  ---
+  duration_ms: 0.478387
+  type: 'suite'
+  ...
+# Subtest: buildSessionConfig
+    # Subtest: returns correct defaults in non-production mode
+    ok 1 - returns correct defaults in non-production mode
+      ---
+      duration_ms: 0.623552
+      type: 'test'
+      ...
+    # Subtest: uses lax sameSite for OIDC auth mode
+    ok 2 - uses lax sameSite for OIDC auth mode
+      ---
+      duration_ms: 0.112299
+      type: 'test'
+      ...
+    # Subtest: respects SESSION_COOKIE_SECURE environment variable
+    ok 3 - respects SESSION_COOKIE_SECURE environment variable
+      ---
+      duration_ms: 0.125964
+      type: 'test'
+      ...
+    # Subtest: respects SESSION_COOKIE_SAMESITE environment variable
+    ok 4 - respects SESSION_COOKIE_SAMESITE environment variable
+      ---
+      duration_ms: 0.108061
+      type: 'test'
+      ...
+    # Subtest: throws in production without REDIS_URL and without ALLOW_MEMORY_STORE
+    ok 5 - throws in production without REDIS_URL and without ALLOW_MEMORY_STORE
+      ---
+      duration_ms: 0.29208
+      type: 'test'
+      ...
+    # Subtest: allows memory store in production with ALLOW_MEMORY_STORE=true
+    ok 6 - allows memory store in production with ALLOW_MEMORY_STORE=true
+      ---
+      duration_ms: 0.113831
+      type: 'test'
+      ...
+    # Subtest: throws in production with weak SESSION_SECRET
+    ok 7 - throws in production with weak SESSION_SECRET
+      ---
+      duration_ms: 0.095025
+      type: 'test'
+      ...
+    # Subtest: uses custom SESSION_SECRET when provided
+    ok 8 - uses custom SESSION_SECRET when provided
+      ---
+      duration_ms: 0.104362
+      type: 'test'
+      ...
+    1..8
+ok 18 - buildSessionConfig
+  ---
+  duration_ms: 1.731327
+  type: 'suite'
+  ...
+# ◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# ⚠️ LOCAL_USERS environment variable is not set. Local authentication is enabled but no users are configured.
+# Subtest: GET /api/config is publicly accessible (no auth gate)
+ok 19 - GET /api/config is publicly accessible (no auth gate)
+  ---
+  duration_ms: 153.254475
+  type: 'test'
+  ...
+# Subtest: GET /api/config does NOT expose session keys or user data
+ok 20 - GET /api/config does NOT expose session keys or user data
+  ---
+  duration_ms: 3.440613
+  type: 'test'
+  ...
+# Subtest: GET /api/config exposes defaultSessionKey even without auth
+not ok 21 - GET /api/config exposes defaultSessionKey even without auth
+  ---
+  duration_ms: 2.820177
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:105:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    'local' !== 'none'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'none'
+  actual: 'local'
+  operator: 'strictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:109:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:106:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: GET /api/config does NOT expose OIDC secrets when OIDC is enabled
+ok 22 - GET /api/config does NOT expose OIDC secrets when OIDC is enabled
+  ---
+  duration_ms: 2.299539
+  type: 'test'
+  ...
+# Subtest: POST from untrusted origin is blocked by CORS middleware
+ok 23 - POST from untrusted origin is blocked by CORS middleware
+  ---
+  duration_ms: 2.531087
+  type: 'test'
+  ...
+# Subtest: POST with trusted origin is not blocked by csrfOriginCheck
+ok 24 - POST with trusted origin is not blocked by csrfOriginCheck
+  ---
+  duration_ms: 1.629988
+  type: 'test'
+  ...
+# Subtest: CSRF check allows native mobile origins
+ok 25 - CSRF check allows native mobile origins
+  ---
+  duration_ms: 7.923757
+  type: 'test'
+  ...
+# Subtest: CSRF check allows null Origin for non-browser clients
+ok 26 - CSRF check allows null Origin for non-browser clients
+  ---
+  duration_ms: 1.853649
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions returns redirect or error when unauthenticated
+ok 27 - GET /api/sessions returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.76447
+  type: 'test'
+  ...
+# Subtest: GET /api/agents returns redirect or error when unauthenticated
+ok 28 - GET /api/agents returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.750232
+  type: 'test'
+  ...
+# Subtest: GET /api/openclaw-status returns redirect or error when unauthenticated
+ok 29 - GET /api/openclaw-status returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.612585
+  type: 'test'
+  ...
+# Subtest: POST /api/openclaw-stop returns redirect or error when unauthenticated
+ok 30 - POST /api/openclaw-stop returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.492395
+  type: 'test'
+  ...
+# Subtest: GET /api/openclaw-status passes auth gate in AUTH_MODE=none
+not ok 31 - GET /api/openclaw-status passes auth gate in AUTH_MODE=none
+  ---
+  duration_ms: 1.400839
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:239:1'
+  failureType: 'testCodeFailure'
+  error: 'openclaw-status should not return 401 in auth=none'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 401
+  operator: 'notStrictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:244:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:240:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: POST /api/openclaw-stop passes auth gate in AUTH_MODE=none
+not ok 32 - POST /api/openclaw-stop passes auth gate in AUTH_MODE=none
+  ---
+  duration_ms: 1.661553
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:249:1'
+  failureType: 'testCodeFailure'
+  error: 'openclaw-stop should not return 401 in auth=none'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 401
+  operator: 'notStrictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:257:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:250:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: GET /api/openclaw-status passes auth gate for authenticated user (local)
+not ok 33 - GET /api/openclaw-status passes auth gate for authenticated user (local)
+  ---
+  duration_ms: 4.342343
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:262:1'
+  failureType: 'testCodeFailure'
+  error: 'openclaw-status should not return 401 for authenticated user'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 401
+  operator: 'notStrictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:277:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:263:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: POST /api/openclaw-stop passes auth gate for authenticated user (local)
+not ok 34 - POST /api/openclaw-stop passes auth gate for authenticated user (local)
+  ---
+  duration_ms: 2.384458
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:282:1'
+  failureType: 'testCodeFailure'
+  error: 'openclaw-stop should not return 401 for authenticated user'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 401
+  operator: 'notStrictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:301:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:283:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: GET /api/reactions/:sessionKey returns redirect or error when unauthenticated
+ok 35 - GET /api/reactions/:sessionKey returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.734509
+  type: 'test'
+  ...
+# Subtest: GET /api/messages/:messageId/reactions returns redirect or error when unauthenticated
+ok 36 - GET /api/messages/:messageId/reactions returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.276169
+  type: 'test'
+  ...
+# Subtest: POST /api/messages/:messageId/reactions returns redirect or error when unauthenticated
+ok 37 - POST /api/messages/:messageId/reactions returns redirect or error when unauthenticated
+  ---
+  duration_ms: 1.406486
+  type: 'test'
+  ...
+# Subtest: session access does not infer web ownership from an OpenClaw agent ID
+ok 38 - session access does not infer web ownership from an OpenClaw agent ID
+  ---
+  duration_ms: 0.245356
+  type: 'test'
+  ...
+# Subtest: requireSessionAccess allows an authenticated local user
+ok 39 - requireSessionAccess allows an authenticated local user
+  ---
+  duration_ms: 0.105426
+  type: 'test'
+  ...
+# Subtest: requireSessionAccess allows access when authMode=none
+ok 40 - requireSessionAccess allows access when authMode=none
+  ---
+  duration_ms: 0.0783
+  type: 'test'
+  ...
+# Subtest: session access does not treat query sessionKey as web ownership data
+ok 41 - session access does not treat query sessionKey as web ownership data
+  ---
+  duration_ms: 0.068074
+  type: 'test'
+  ...
+# Subtest: session access does not treat body sessionKey as web ownership data
+ok 42 - session access does not treat body sessionKey as web ownership data
+  ---
+  duration_ms: 0.060995
+  type: 'test'
+  ...
+# Subtest: requireSessionAccess does not require a session key
+ok 43 - requireSessionAccess does not require a session key
+  ---
+  duration_ms: 0.053658
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess allows an authenticated OIDC user with email
+ok 44 - checkSessionAccess allows an authenticated OIDC user with email
+  ---
+  duration_ms: 0.047179
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess allows an authenticated OIDC user with username
+ok 45 - checkSessionAccess allows an authenticated OIDC user with username
+  ---
+  duration_ms: 0.039784
+  type: 'test'
+  ...
+# Subtest: session access allows an authenticated OIDC user regardless of agent ID
+ok 46 - session access allows an authenticated OIDC user regardless of agent ID
+  ---
+  duration_ms: 0.037037
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess denies unauthenticated requests in OIDC mode
+ok 47 - checkSessionAccess denies unauthenticated requests in OIDC mode
+  ---
+  duration_ms: 0.034531
+  type: 'test'
+  ...
+# Subtest: session access does not parse unknown session keys in OIDC mode
+ok 48 - session access does not parse unknown session keys in OIDC mode
+  ---
+  duration_ms: 0.04042
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess allows an authenticated local user
+ok 49 - checkSessionAccess allows an authenticated local user
+  ---
+  duration_ms: 0.03645
+  type: 'test'
+  ...
+# Subtest: session access allows an authenticated local user regardless of agent ID
+ok 50 - session access allows an authenticated local user regardless of agent ID
+  ---
+  duration_ms: 0.037751
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess denies unauthenticated requests in local mode
+ok 51 - checkSessionAccess denies unauthenticated requests in local mode
+  ---
+  duration_ms: 0.031253
+  type: 'test'
+  ...
+# Subtest: session access does not parse unknown session keys in local mode
+ok 52 - session access does not parse unknown session keys in local mode
+  ---
+  duration_ms: 0.040384
+  type: 'test'
+  ...
+# Subtest: checkSessionAccess allows authenticated local access to g-agent sessions
+ok 53 - checkSessionAccess allows authenticated local access to g-agent sessions
+  ---
+  duration_ms: 0.043547
+  type: 'test'
+  ...
+# Subtest: session access allows authenticated users across g-agent IDs
+ok 54 - session access allows authenticated users across g-agent IDs
+  ---
+  duration_ms: 0.053209
+  type: 'test'
+  ...
+# Subtest: When AUTH_MODE=none, /api/config is accessible without auth
+not ok 55 - When AUTH_MODE=none, /api/config is accessible without auth
+  ---
+  duration_ms: 3.080457
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:611:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    'local' !== 'none'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'none'
+  actual: 'local'
+  operator: 'strictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:615:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:612:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: When AUTH_MODE=none, session access check is a no-op
+ok 56 - When AUTH_MODE=none, session access check is a no-op
+  ---
+  duration_ms: 0.247239
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions/:key/history requires authentication
+ok 57 - GET /api/sessions/:key/history requires authentication
+  ---
+  duration_ms: 1.422601
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions/:key/send requires authentication
+ok 58 - GET /api/sessions/:key/send requires authentication
+  ---
+  duration_ms: 1.391374
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions/:key/send-stream requires authentication
+ok 59 - GET /api/sessions/:key/send-stream requires authentication
+  ---
+  duration_ms: 1.330756
+  type: 'test'
+  ...
+# Subtest: GET /api/csrf-token requires authentication in local mode
+ok 60 - GET /api/csrf-token requires authentication in local mode
+  ---
+  duration_ms: 1.337939
+  type: 'test'
+  ...
+# Subtest: GET /api/csrf-token is accessible without auth when AUTH_MODE=none
+not ok 61 - GET /api/csrf-token is accessible without auth when AUTH_MODE=none
+  ---
+  duration_ms: 2.726294
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:724:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    /api/csrf-token should return 200 in auth=none mode
+    
+    401 !== 200
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 200
+  actual: 401
+  operator: 'strictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:728:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:725:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: GET /api/csrf-token issues a token after login (local auth)
+not ok 62 - GET /api/csrf-token issues a token after login (local auth)
+  ---
+  duration_ms: 2.301426
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:734:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    csrf-token should return 200 after login
+    
+    401 !== 200
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 200
+  actual: 401
+  operator: 'strictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:750:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:735:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: CSRF token rotation: valid token is accepted then rotated (unit)
+ok 63 - CSRF token rotation: valid token is accepted then rotated (unit)
+  ---
+  duration_ms: 0.35777
+  type: 'test'
+  ...
+# Subtest: CSRF token rejection: wrong token is denied with 403 (unit)
+ok 64 - CSRF token rejection: wrong token is denied with 403 (unit)
+  ---
+  duration_ms: 0.135647
+  type: 'test'
+  ...
+# Subtest: CSRF token rejection: missing X-CSRF-Token header is denied (unit)
+ok 65 - CSRF token rejection: missing X-CSRF-Token header is denied (unit)
+  ---
+  duration_ms: 0.087687
+  type: 'test'
+  ...
+# Subtest: CSRF check is skipped for non-browser requests (no Origin/Referer)
+ok 66 - CSRF check is skipped for non-browser requests (no Origin/Referer)
+  ---
+  duration_ms: 0.065876
+  type: 'test'
+  ...
+# Subtest: CSRF check is skipped for GET requests
+ok 67 - CSRF check is skipped for GET requests
+  ---
+  duration_ms: 0.05812
+  type: 'test'
+  ...
+# Subtest: CSRF check is skipped when session has no csrfToken
+ok 68 - CSRF check is skipped when session has no csrfToken
+  ---
+  duration_ms: 0.059464
+  type: 'test'
+  ...
+# Subtest: GET /api/assistant-identity requires authentication
+ok 69 - GET /api/assistant-identity requires authentication
+  ---
+  duration_ms: 1.726232
+  type: 'test'
+  ...
+# Subtest: GET /api/assistant-identity returns 400 when sessionKey is missing
+not ok 70 - GET /api/assistant-identity returns 400 when sessionKey is missing
+  ---
+  duration_ms: 1.38231
+  type: 'test'
+  location: '/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:918:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    /api/assistant-identity should return 400 without sessionKey
+    
+    401 !== 400
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 400
+  actual: 401
+  operator: 'strictEqual'
+  stack: |-
+    /workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:923:12
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async withServer (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:40:5)
+    async TestContext.<anonymous> (/workspace/llm/prfix-misospace-miso-chat-703-fix-703/tests/authz-integration.test.js:919:3)
+    async Test.run (node:internal/test_runner/test:1332:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:911:7)
+  ...
+# Subtest: Deployment model: any authenticated OIDC user can access any session
+ok 71 - Deployment model: any authenticated OIDC user can access any session
+  ---
+  duration_ms: 0.254554
+  type: 'test'
+  ...
+# Subtest: Deployment model: any authenticated local user can access any session
+ok 72 - Deployment model: any authenticated local user can access any session
+  ---
+  duration_ms: 0.10425
+  type: 'test'
+  ...
+# Subtest: Deployment model: unauthenticated user denied regardless of target session
+ok 73 - Deployment model: unauthenticated user denied regardless of target session
+  ---
+  duration_ms: 0.076682
+  type: 'test'
+  ...
+# Subtest: Deployment model: authMode=none bypasses all access checks
+ok 74 - Deployment model: authMode=none bypasses all access checks
+  ---
+  duration_ms: 0.050229
+  type: 'test'
+  ...
+# Subtest: Deployment model: OpenClaw agent session keys treated same as user sessions
+ok 75 - Deployment model: OpenClaw agent session keys treated same as user sessions
+  ---
+  duration_ms: 0.047322
+  type: 'test'
+  ...
+# Subtest: classic browser scripts share a valid global lexical scope
+ok 76 - classic browser scripts share a valid global lexical scope
+  ---
+  duration_ms: 3.167332
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor returns false when window is undefined
+ok 77 - isNativeCapacitor returns false when window is undefined
+  ---
+  duration_ms: 1.362233
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor returns false when window.Capacitor is undefined
+ok 78 - isNativeCapacitor returns false when window.Capacitor is undefined
+  ---
+  duration_ms: 0.555137
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor returns false when Capacitor.isNativePlatform is not a function
+ok 79 - isNativeCapacitor returns false when Capacitor.isNativePlatform is not a function
+  ---
+  duration_ms: 0.564264
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor returns true when Capacitor.isNativePlatform() returns true
+ok 80 - isNativeCapacitor returns true when Capacitor.isNativePlatform() returns true
+  ---
+  duration_ms: 1.243286
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor returns false when Capacitor.isNativePlatform() returns false
+ok 81 - isNativeCapacitor returns false when Capacitor.isNativePlatform() returns false
+  ---
+  duration_ms: 0.602985
+  type: 'test'
+  ...
+# Subtest: isNativeCapacitor is globally available after loading
+ok 82 - isNativeCapacitor is globally available after loading
+  ---
+  duration_ms: 0.558063
+  type: 'test'
+  ...
+# Subtest: csp-hashes.json exists and is well-formed
+ok 83 - csp-hashes.json exists and is well-formed
+  ---
+  duration_ms: 0.653371
+  type: 'test'
+  ...
+# Subtest: every inline <script> in public/*.html has a matching hash in the manifest
+ok 84 - every inline <script> in public/*.html has a matching hash in the manifest
+  ---
+  duration_ms: 1.70871
+  type: 'test'
+  ...
+# Subtest: build-csp-hashes --check agrees with the committed manifest
+ok 85 - build-csp-hashes --check agrees with the committed manifest
+  ---
+  duration_ms: 1.606165
+  type: 'test'
+  ...
+# Subtest: security.js script-src directive uses hashes, not unsafe-inline
+ok 86 - security.js script-src directive uses hashes, not unsafe-inline
+  ---
+  duration_ms: 0.827941
+  type: 'test'
+  ...
+# Subtest: hashes in manifest match actual sha256 of inline script payloads
+ok 87 - hashes in manifest match actual sha256 of inline script payloads
+  ---
+  duration_ms: 0.864914
+  type: 'test'
+  ...
+# Subtest: concurrent server loads isolate per-process SQLite DB files (no SQLITE_BUSY)
+ok 88 - concurrent server loads isolate per-process SQLite DB files (no SQLITE_BUSY)
+  ---
+  duration_ms: 57.78362
+  type: 'test'
+  ...
+# Subtest: lib/db.js — schema and reactions
+    # Subtest: schema init
+        # Subtest: creates the reactions table on first load
+        ok 1 - creates the reactions table on first load
+          ---
+          duration_ms: 0.616111
+          type: 'test'
+          ...
+        # Subtest: has the expected columns
+        ok 2 - has the expected columns
+          ---
+          duration_ms: 0.18378
+          type: 'test'
+          ...
+        # Subtest: enforces unique constraint on (message_id, session_key, emoji, username)
+        ok 3 - enforces unique constraint on (message_id, session_key, emoji, username)
+          ---
+          duration_ms: 0.945741
+          type: 'test'
+          ...
+        1..3
+    ok 1 - schema init
+      ---
+      duration_ms: 2.343931
+      type: 'suite'
+      ...
+    # Subtest: toggleReaction
+        # Subtest: adds a reaction when none exists
+        ok 1 - adds a reaction when none exists
+          ---
+          duration_ms: 0.263469
+          type: 'test'
+          ...
+        # Subtest: removes a reaction when it already exists
+        ok 2 - removes a reaction when it already exists
+          ---
+          duration_ms: 0.191658
+          type: 'test'
+          ...
+        # Subtest: toggles back to added on third call
+        ok 3 - toggles back to added on third call
+          ---
+          duration_ms: 0.177856
+          type: 'test'
+          ...
+        1..3
+    ok 2 - toggleReaction
+      ---
+      duration_ms: 0.815383
+      type: 'suite'
+      ...
+    # Subtest: getForMessage
+        # Subtest: returns reactions for a given message_id
+        ok 1 - returns reactions for a given message_id
+          ---
+          duration_ms: 0.54482
+          type: 'test'
+          ...
+        # Subtest: returns empty array when no reactions exist
+        ok 2 - returns empty array when no reactions exist
+          ---
+          duration_ms: 0.550518
+          type: 'test'
+          ...
+        # Subtest: filters by session_key when provided
+        ok 3 - filters by session_key when provided
+          ---
+          duration_ms: 0.284549
+          type: 'test'
+          ...
+        1..3
+    ok 3 - getForMessage
+      ---
+      duration_ms: 1.581774
+      type: 'suite'
+      ...
+    # Subtest: removeForMessage
+        # Subtest: removes all reactions for a message
+        ok 1 - removes all reactions for a message
+          ---
+          duration_ms: 0.381236
+          type: 'test'
+          ...
+        # Subtest: is safe to call when no reactions exist
+        ok 2 - is safe to call when no reactions exist
+          ---
+          duration_ms: 0.078944
+          type: 'test'
+          ...
+        1..2
+    ok 4 - removeForMessage
+      ---
+      duration_ms: 0.537417
+      type: 'suite'
+      ...
+    # Subtest: aggregation across sessions
+        # Subtest: counts reactions from multiple sessions correctly
+        ok 1 - counts reactions from multiple sessions correctly
+          ---
+          duration_ms: 0.394499
+          type: 'test'
+          ...
+        1..1
+    ok 5 - aggregation across sessions
+      ---
+      duration_ms: 0.451611
+      type: 'suite'
+      ...
+    # Subtest: getForSession
+        # Subtest: returns all reactions for a session
+        ok 1 - returns all reactions for a session
+          ---
+          duration_ms: 0.282496
+          type: 'test'
+          ...
+        # Subtest: returns empty object when session has no reactions
+        ok 2 - returns empty object when session has no reactions
+          ---
+          duration_ms: 0.123462
+          type: 'test'
+          ...
+        1..2
+    ok 6 - getForSession
+      ---
+      duration_ms: 0.471286
+      type: 'suite'
+      ...
+    1..6
+ok 89 - lib/db.js — schema and reactions
+  ---
+  duration_ms: 7.362603
+  type: 'suite'
+  ...
+# Subtest: Gateway scope configuration
+    # Subtest: should include operator.read and operator.write in the scopes definition
+    ok 1 - should include operator.read and operator.write in the scopes definition
+      ---
+      duration_ms: 0.601121
+      type: 'test'
+      ...
+    # Subtest: should conditionally add operator.admin and operator.pairing via GATEWAY_ADMIN_SCOPES === "true"
+    ok 2 - should conditionally add operator.admin and operator.pairing via GATEWAY_ADMIN_SCOPES === "true"
+      ---
+      duration_ms: 0.15883
+      type: 'test'
+      ...
+    # Subtest: should NOT contain non-scope entries (chat.send, sessions.send, sessions.list, sessions.history)
+    ok 3 - should NOT contain non-scope entries (chat.send, sessions.send, sessions.list, sessions.history)
+      ---
+      duration_ms: 0.150366
+      type: 'test'
+      ...
+    # Subtest: should have exactly 2 hardcoded scopes and 2 conditional scopes
+    ok 4 - should have exactly 2 hardcoded scopes and 2 conditional scopes
+      ---
+      duration_ms: 0.208534
+      type: 'test'
+      ...
+    # Subtest: should use spread syntax for conditional scopes (not a hardcoded array)
+    ok 5 - should use spread syntax for conditional scopes (not a hardcoded array)
+      ---
+      duration_ms: 0.153005
+      type: 'test'
+      ...
+    1..5
+ok 90 - Gateway scope configuration
+  ---
+  duration_ms: 2.818218
+  type: 'suite'
+  ...
+# Subtest: GatewayWsManager stores frameData in pending requests
+ok 91 - GatewayWsManager stores frameData in pending requests
+  ---
+  duration_ms: 1.185933
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager resends frames on reconnect recovery
+ok 92 - GatewayWsManager resends frames on reconnect recovery
+  ---
+  duration_ms: 0.38072
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager fails pending requests when no frameData on recovery
+ok 93 - GatewayWsManager fails pending requests when no frameData on recovery
+  ---
+  duration_ms: 20.035466
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager configures recoveredRequestTimeoutSeconds from options
+ok 94 - GatewayWsManager configures recoveredRequestTimeoutSeconds from options
+  ---
+  duration_ms: 0.373623
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager configures recoveredRequestTimeoutSeconds from env
+ok 95 - GatewayWsManager configures recoveredRequestTimeoutSeconds from env
+  ---
+  duration_ms: 0.303499
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager defaults recoveredRequestTimeoutSeconds to 30
+ok 96 - GatewayWsManager defaults recoveredRequestTimeoutSeconds to 30
+  ---
+  duration_ms: 0.259025
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager initial state is disconnected
+ok 97 - GatewayWsManager initial state is disconnected
+  ---
+  duration_ms: 0.679724
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager send rejects when not connected
+ok 98 - GatewayWsManager send rejects when not connected
+  ---
+  duration_ms: 0.253595
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager fails pending requests on disconnect
+ok 99 - GatewayWsManager fails pending requests on disconnect
+  ---
+  duration_ms: 10.073421
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager stores pending requests for recovery on disconnect
+ok 100 - GatewayWsManager stores pending requests for recovery on disconnect
+  ---
+  duration_ms: 0.243495
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager recovers pending requests after reconnect
+ok 101 - GatewayWsManager recovers pending requests after reconnect
+  ---
+  duration_ms: 0.3091
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager disconnect clears all timers and state
+ok 102 - GatewayWsManager disconnect clears all timers and state
+  ---
+  duration_ms: 10.772934
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager createRequestId produces unique IDs
+ok 103 - GatewayWsManager createRequestId produces unique IDs
+  ---
+  duration_ms: 0.374478
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager reconnect backoff increases delay
+ok 104 - GatewayWsManager reconnect backoff increases delay
+  ---
+  duration_ms: 0.170317
+  type: 'test'
+  ...
+# Subtest: gatewayWsLastError is declared at module scope
+ok 105 - gatewayWsLastError is declared at module scope
+  ---
+  duration_ms: 1.317871
+  type: 'test'
+  ...
+# Subtest: gatewayWsLastClose is declared at module scope
+ok 106 - gatewayWsLastClose is declared at module scope
+  ---
+  duration_ms: 0.286082
+  type: 'test'
+  ...
+# Subtest: gatewayWsManager error handler sets gatewayWsLastError
+ok 107 - gatewayWsManager error handler sets gatewayWsLastError
+  ---
+  duration_ms: 0.280846
+  type: 'test'
+  ...
+# Subtest: gatewayWsManager close handler sets gatewayWsLastClose
+ok 108 - gatewayWsManager close handler sets gatewayWsLastClose
+  ---
+  duration_ms: 0.301301
+  type: 'test'
+  ...
+# Subtest: initGatewayWsManager resets error/close state on successful connect
+ok 109 - initGatewayWsManager resets error/close state on successful connect
+  ---
+  duration_ms: 0.273846
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager emits error and close events
+ok 110 - GatewayWsManager emits error and close events
+  ---
+  duration_ms: 20.332548
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager exposes public methods used by health endpoint
+ok 111 - GatewayWsManager exposes public methods used by health endpoint
+  ---
+  duration_ms: 0.268715
+  type: 'test'
+  ...
+# Subtest: GatewayWsManager.public methods return correct types for disconnected state
+ok 112 - GatewayWsManager.public methods return correct types for disconnected state
+  ---
+  duration_ms: 0.24013
+  type: 'test'
+  ...
+# Subtest: health endpoint references gatewayWsLastError and gatewayWsLastClose
+ok 113 - health endpoint references gatewayWsLastError and gatewayWsLastClose
+  ---
+  duration_ms: 0.281323
+  type: 'test'
+  ...
+# ◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: gracefulShutdown is exported as a function
+ok 114 - gracefulShutdown is exported as a function
+  ---
+  duration_ms: 0.53131
+  type: 'test'
+  ...
+# Subtest: SIGTERM and SIGINT handlers are registered
+ok 115 - SIGTERM and SIGINT handlers are registered
+  ---
+  duration_ms: 0.139819
+  type: 'test'
+  ...
+# Subtest: graceful shutdown via SIGTERM signal (integration)
+ok 116 - graceful shutdown via SIGTERM signal (integration)
+  ---
+  duration_ms: 3010.823974
+  type: 'test'
+  ...
+# Subtest: graceful shutdown via SIGINT signal (integration)
+ok 117 - graceful shutdown via SIGINT signal (integration)
+  ---
+  duration_ms: 3009.653495
+  type: 'test'
+  ...
+# Subtest: PreviewCache stores and retrieves entries
+ok 118 - PreviewCache stores and retrieves entries
+  ---
+  duration_ms: 0.882018
+  type: 'test'
+  ...
+# Subtest: PreviewCache returns undefined for missing keys
+ok 119 - PreviewCache returns undefined for missing keys
+  ---
+  duration_ms: 0.761699
+  type: 'test'
+  ...
+# Subtest: PreviewCache evicts LRU when at capacity
+ok 120 - PreviewCache evicts LRU when at capacity
+  ---
+  duration_ms: 0.143073
+  type: 'test'
+  ...
+# Subtest: PreviewCache respects TTL expiry
+ok 121 - PreviewCache respects TTL expiry
+  ---
+  duration_ms: 60.741723
+  type: 'test'
+  ...
+# Subtest: PreviewCache cleanup removes expired entries
+ok 122 - PreviewCache cleanup removes expired entries
+  ---
+  duration_ms: 60.782546
+  type: 'test'
+  ...
+# Subtest: PreviewCache stats returns correct counts
+ok 123 - PreviewCache stats returns correct counts
+  ---
+  duration_ms: 0.308546
+  type: 'test'
+  ...
+# Subtest: PreviewCache clear removes all entries
+ok 124 - PreviewCache clear removes all entries
+  ---
+  duration_ms: 0.133097
+  type: 'test'
+  ...
+# Subtest: PreviewCache normalizes URLs to lowercase for keys
+ok 125 - PreviewCache normalizes URLs to lowercase for keys
+  ---
+  duration_ms: 0.090313
+  type: 'test'
+  ...
+# Subtest: PreviewCache updates existing keys in place (no eviction)
+ok 126 - PreviewCache updates existing keys in place (no eviction)
+  ---
+  duration_ms: 0.098414
+  type: 'test'
+  ...
+# Subtest: PreviewCoalescer returns same result for concurrent calls
+ok 127 - PreviewCoalescer returns same result for concurrent calls
+  ---
+  duration_ms: 51.375889
+  type: 'test'
+  ...
+# Subtest: PreviewCoalescer allows different keys to run independently
+ok 128 - PreviewCoalescer allows different keys to run independently
+  ---
+  duration_ms: 50.683808
+  type: 'test'
+  ...
+# Subtest: PreviewCoalescer sequential calls both execute
+ok 129 - PreviewCoalescer sequential calls both execute
+  ---
+  duration_ms: 60.799764
+  type: 'test'
+  ...
+# Subtest: PreviewCoalescer cancelAll clears pending promises
+ok 130 - PreviewCoalescer cancelAll clears pending promises
+  ---
+  duration_ms: 1001.69627
+  type: 'test'
+  ...
+# Subtest: PreviewCoalescer propagates errors from fn
+ok 131 - PreviewCoalescer propagates errors from fn
+  ---
+  duration_ms: 1.448029
+  type: 'test'
+  ...
+# Subtest: Cache hit skips coalescer for repeated requests
+ok 132 - Cache hit skips coalescer for repeated requests
+  ---
+  duration_ms: 0.191131
+  type: 'test'
+  ...
+# Subtest: Coalescer prevents duplicate fetches under concurrent load
+ok 133 - Coalescer prevents duplicate fetches under concurrent load
+  ---
+  duration_ms: 100.451615
+  type: 'test'
+  ...
+# Subtest: Cache TTL expiry allows fresh fetch on next request
+ok 134 - Cache TTL expiry allows fresh fetch on next request
+  ---
+  duration_ms: 151.14877
+  type: 'test'
+  ...
+# Subtest: HostConcurrencyLimiter allows up to maxConcurrentPerHost simultaneous fetches
+ok 135 - HostConcurrencyLimiter allows up to maxConcurrentPerHost simultaneous fetches
+  ---
+  duration_ms: 151.413175
+  type: 'test'
+  ...
+# Subtest: HostConcurrencyLimiter allows different hosts to run independently
+ok 136 - HostConcurrencyLimiter allows different hosts to run independently
+  ---
+  duration_ms: 50.901251
+  type: 'test'
+  ...
+# Subtest: HostConcurrencyLimiter serializes excess requests per host
+ok 137 - HostConcurrencyLimiter serializes excess requests per host
+  ---
+  duration_ms: 102.010741
+  type: 'test'
+  ...
+# Subtest: HostConcurrencyLimiter propagates errors from fn
+ok 138 - HostConcurrencyLimiter propagates errors from fn
+  ---
+  duration_ms: 0.547128
+  type: 'test'
+  ...
+# Subtest: HostConcurrencyLimiter stats returns correct counts
+ok 139 - HostConcurrencyLimiter stats returns correct counts
+  ---
+  duration_ms: 0.130144
+  type: 'test'
+  ...
+# Subtest: Retry delay uses exponential backoff with jitter
+ok 140 - Retry delay uses exponential backoff with jitter
+  ---
+  duration_ms: 0.187083
+  type: 'test'
+  ...
+# Subtest: Simulates simultaneous slow DNS responses under concurrency limit
+ok 141 - Simulates simultaneous slow DNS responses under concurrency limit
+  ---
+  duration_ms: 301.595366
+  type: 'test'
+  ...
+# Subtest: Per-host limiter prevents DNS thundering herd across multiple hosts
+ok 142 - Per-host limiter prevents DNS thundering herd across multiple hosts
+  ---
+  duration_ms: 160.260917
+  type: 'test'
+  ...
+# Subtest: Structured timing metrics accumulate across phases
+ok 143 - Structured timing metrics accumulate across phases
+  ---
+  duration_ms: 24.006276
+  type: 'test'
+  ...
+# Subtest: Retry metrics track 5xx retry attempts
+ok 144 - Retry metrics track 5xx retry attempts
+  ---
+  duration_ms: 0.300393
+  type: 'test'
+  ...
+# Subtest: native onboarding requires backend configuration before app boot continues
+ok 145 - native onboarding requires backend configuration before app boot continues
+  ---
+  duration_ms: 1.29678
+  type: 'test'
+  ...
+# Subtest: auth-required fetch path will not immediately relaunch login during callback settle window
+ok 146 - auth-required fetch path will not immediately relaunch login during callback settle window
+  ---
+  duration_ms: 0.166471
+  type: 'test'
+  ...
+# Subtest: manual OTA affordance still exists in the native shell header
+ok 147 - manual OTA affordance still exists in the native shell header
+  ---
+  duration_ms: 0.542881
+  type: 'test'
+  ...
+# Subtest: mobile updater fails explicitly when updater plugin is unavailable
+ok 148 - mobile updater fails explicitly when updater plugin is unavailable
+  ---
+  duration_ms: 0.121513
+  type: 'test'
+  ...
+# Subtest: native build marker exposes backend and OTA plugin state in-app
+ok 149 - native build marker exposes backend and OTA plugin state in-app
+  ---
+  duration_ms: 0.689841
+  type: 'test'
+  ...
+# Subtest: mobile OIDC start keeps deep-link handoff query intact
+ok 150 - mobile OIDC start keeps deep-link handoff query intact
+  ---
+  duration_ms: 0.690431
+  type: 'test'
+  ...
+# Subtest: mobile callback flow still consumes temporary auth token and can recover
+ok 151 - mobile callback flow still consumes temporary auth token and can recover
+  ---
+  duration_ms: 0.640165
+  type: 'test'
+  ...
+# Subtest: auth flows persist session before redirect/response to avoid mobile login races
+ok 152 - auth flows persist session before redirect/response to avoid mobile login races
+  ---
+  duration_ms: 0.196939
+  type: 'test'
+  ...
+# Subtest: android manifest keeps misochat deep-link callback intent filter
+ok 153 - android manifest keeps misochat deep-link callback intent filter
+  ---
+  duration_ms: 0.120613
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects non-object manifests
+ok 154 - validateSchema: rejects non-object manifests
+  ---
+  duration_ms: 0.835562
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects manifest missing required top-level fields
+ok 155 - validateSchema: rejects manifest missing required top-level fields
+  ---
+  duration_ms: 0.151568
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects manifest with empty required fields
+ok 156 - validateSchema: rejects manifest with empty required fields
+  ---
+  duration_ms: 0.762523
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects manifest missing channels
+ok 157 - validateSchema: rejects manifest missing channels
+  ---
+  duration_ms: 0.132056
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects missing channels object
+ok 158 - validateSchema: rejects missing channels object
+  ---
+  duration_ms: 0.109086
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects empty channels object
+ok 159 - validateSchema: rejects empty channels object
+  ---
+  duration_ms: 0.095468
+  type: 'test'
+  ...
+# Subtest: validateSchema: accepts manifest with valid channels
+ok 160 - validateSchema: accepts manifest with valid channels
+  ---
+  duration_ms: 0.088099
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects channel missing required fields
+ok 161 - validateSchema: rejects channel missing required fields
+  ---
+  duration_ms: 0.122186
+  type: 'test'
+  ...
+# Subtest: validateSchema: accepts manifest with multiple channels
+ok 162 - validateSchema: accepts manifest with multiple channels
+  ---
+  duration_ms: 0.129701
+  type: 'test'
+  ...
+# Subtest: validateSchema: rejects unsupported digest algorithm in channel
+ok 163 - validateSchema: rejects unsupported digest algorithm in channel
+  ---
+  duration_ms: 1.811604
+  type: 'test'
+  ...
+# Subtest: validateTagConsistency: accepts matching release tag and manifest version
+ok 164 - validateTagConsistency: accepts matching release tag and manifest version
+  ---
+  duration_ms: 0.241892
+  type: 'test'
+  ...
+# Subtest: validateTagConsistency: rejects mismatched release tag vs manifest version
+ok 165 - validateTagConsistency: rejects mismatched release tag vs manifest version
+  ---
+  duration_ms: 0.073319
+  type: 'test'
+  ...
+# Subtest: validateTagConsistency: rejects mismatched release tag vs manifest tag
+ok 166 - validateTagConsistency: rejects mismatched release tag vs manifest tag
+  ---
+  duration_ms: 0.162331
+  type: 'test'
+  ...
+# Subtest: validateTagConsistency: accepts when no release tag provided
+ok 167 - validateTagConsistency: accepts when no release tag provided
+  ---
+  duration_ms: 0.084587
+  type: 'test'
+  ...
+# Subtest: validateTagConsistency: rejects channel version older than manifest version
+ok 168 - validateTagConsistency: rejects channel version older than manifest version
+  ---
+  duration_ms: 0.106065
+  type: 'test'
+  ...
+# Subtest: validateAssetHosts: accepts URLs pointing to trusted GitHub release host
+ok 169 - validateAssetHosts: accepts URLs pointing to trusted GitHub release host
+  ---
+  duration_ms: 0.286058
+  type: 'test'
+  ...
+# Subtest: validateAssetHosts: rejects URLs pointing to untrusted host
+ok 170 - validateAssetHosts: rejects URLs pointing to untrusted host
+  ---
+  duration_ms: 0.094713
+  type: 'test'
+  ...
+# Subtest: validateAssetHosts: rejects URLs with wrong release path pattern
+ok 171 - validateAssetHosts: rejects URLs with wrong release path pattern
+  ---
+  duration_ms: 0.055388
+  type: 'test'
+  ...
+# Subtest: validateAssetHosts: validates top-level bundleUrl too
+ok 172 - validateAssetHosts: validates top-level bundleUrl too
+  ---
+  duration_ms: 0.057993
+  type: 'test'
+  ...
+# Subtest: verifyDigest: accepts matching digest
+ok 173 - verifyDigest: accepts matching digest
+  ---
+  duration_ms: 0.529713
+  type: 'test'
+  ...
+# Subtest: verifyDigest: rejects mismatched digest
+ok 174 - verifyDigest: rejects mismatched digest
+  ---
+  duration_ms: 0.117378
+  type: 'test'
+  ...
+# Subtest: verifyDigest: skips validation when no digest algorithm specified
+ok 175 - verifyDigest: skips validation when no digest algorithm specified
+  ---
+  duration_ms: 0.054705
+  type: 'test'
+  ...
+# Subtest: verifyDigest: rejects when expected digest not provided
+ok 176 - verifyDigest: rejects when expected digest not provided
+  ---
+  duration_ms: 0.039036
+  type: 'test'
+  ...
+# Subtest: validateManifest: full pipeline accepts valid manifest from trusted source
+ok 177 - validateManifest: full pipeline accepts valid manifest from trusted source
+  ---
+  duration_ms: 0.15562
+  type: 'test'
+  ...
+# Subtest: validateManifest: rejects manifest with untrusted bundleUrl
+ok 178 - validateManifest: rejects manifest with untrusted bundleUrl
+  ---
+  duration_ms: 0.095319
+  type: 'test'
+  ...
+# Subtest: validateManifest: rejects manifest with tag mismatch
+ok 179 - validateManifest: rejects manifest with tag mismatch
+  ---
+  duration_ms: 0.090843
+  type: 'test'
+  ...
+# Subtest: validateManifest: no errors when optional fields omitted
+ok 180 - validateManifest: no errors when optional fields omitted
+  ---
+  duration_ms: 0.084275
+  type: 'test'
+  ...
+# Subtest: normalizeVersion: strips v prefix and handles undefined
+ok 181 - normalizeVersion: strips v prefix and handles undefined
+  ---
+  duration_ms: 0.044089
+  type: 'test'
+  ...
+# Subtest: compareVersions: correct ordering
+ok 182 - compareVersions: correct ordering
+  ---
+  duration_ms: 0.048898
+  type: 'test'
+  ...
+# Subtest: compareVersions: handles partial versions
+ok 183 - compareVersions: handles partial versions
+  ---
+  duration_ms: 0.03326
+  type: 'test'
+  ...
+# Subtest: SUPPORTED_DIGEST_ALGORITHMS includes sha-256
+ok 184 - SUPPORTED_DIGEST_ALGORITHMS includes sha-256
+  ---
+  duration_ms: 0.030094
+  type: 'test'
+  ...
+# Subtest: update-manager.js parses as valid JS (syntax check)
+ok 185 - update-manager.js parses as valid JS (syntax check)
+  ---
+  duration_ms: 0.943359
+  type: 'test'
+  ...
+# Subtest: compareVersions behaves correctly when executed in VM sandbox
+ok 186 - compareVersions behaves correctly when executed in VM sandbox
+  ---
+  duration_ms: 1.160524
+  type: 'test'
+  ...
+# Subtest: MobileUpdateManager IIFE executes in VM sandbox without errors
+ok 187 - MobileUpdateManager IIFE executes in VM sandbox without errors
+  ---
+  duration_ms: 1.358622
+  type: 'test'
+  ...
+# Subtest: MobileUpdateManager.init skips when not on native platform
+ok 188 - MobileUpdateManager.init skips when not on native platform
+  ---
+  duration_ms: 0.728668
+  type: 'test'
+  ...
+# Subtest: MobileUpdateManager.destroy clears interval
+ok 189 - MobileUpdateManager.destroy clears interval
+  ---
+  duration_ms: 0.659847
+  type: 'test'
+  ...
+# Subtest: manifest parsing: stable channel version takes precedence over top-level
+ok 190 - manifest parsing: stable channel version takes precedence over top-level
+  ---
+  duration_ms: 0.618504
+  type: 'test'
+  ...
+# Subtest: manifest parsing: falls back to top-level when channels missing
+ok 191 - manifest parsing: falls back to top-level when channels missing
+  ---
+  duration_ms: 0.096744
+  type: 'test'
+  ...
+# Subtest: manifest parsing: missing bundleUrl detected as no-update
+ok 192 - manifest parsing: missing bundleUrl detected as no-update
+  ---
+  duration_ms: 0.16095
+  type: 'test'
+  ...
+# Subtest: compareVersions: handles partial version strings in VM
+ok 193 - compareVersions: handles partial version strings in VM
+  ---
+  duration_ms: 0.682632
+  type: 'test'
+  ...
+# Subtest: compareVersions: equal versions
+ok 194 - compareVersions: equal versions
+  ---
+  duration_ms: 0.800236
+  type: 'test'
+  ...
+# Subtest: compareVersions: newer version is greater
+ok 195 - compareVersions: newer version is greater
+  ---
+  duration_ms: 0.125475
+  type: 'test'
+  ...
+# Subtest: compareVersions: older version is less
+ok 196 - compareVersions: older version is less
+  ---
+  duration_ms: 0.894601
+  type: 'test'
+  ...
+# Subtest: compareVersions: handles different segment counts
+ok 197 - compareVersions: handles different segment counts
+  ---
+  duration_ms: 0.147654
+  type: 'test'
+  ...
+# Subtest: compareVersions: strips leading v prefix
+ok 198 - compareVersions: strips leading v prefix
+  ---
+  duration_ms: 0.11018
+  type: 'test'
+  ...
+# Subtest: manifest channels.stable.version is used for update check
+ok 199 - manifest channels.stable.version is used for update check
+  ---
+  duration_ms: 0.090917
+  type: 'test'
+  ...
+# Subtest: manifest falls back to top-level version when channels missing
+ok 200 - manifest falls back to top-level version when channels missing
+  ---
+  duration_ms: 0.092698
+  type: 'test'
+  ...
+# Subtest: server.js includes mobile update manifest route
+ok 201 - server.js includes mobile update manifest route
+  ---
+  duration_ms: 0.329576
+  type: 'test'
+  ...
+# Subtest: update-manager.js uses server endpoint with GitHub fallback
+ok 202 - update-manager.js uses server endpoint with GitHub fallback
+  ---
+  duration_ms: 0.133964
+  type: 'test'
+  ...
+# Subtest: update-manager.js no longer hardcodes repo in getLatestManifest
+ok 203 - update-manager.js no longer hardcodes repo in getLatestManifest
+  ---
+  duration_ms: 0.174072
+  type: 'test'
+  ...
+# Subtest: release-version-check.js exists and is executable
+ok 204 - release-version-check.js exists and is executable
+  ---
+  duration_ms: 0.125304
+  type: 'test'
+  ...
+# Subtest: release-version-check.js validates package.json version exists
+ok 205 - release-version-check.js validates package.json version exists
+  ---
+  duration_ms: 0.170182
+  type: 'test'
+  ...
+# Subtest: MOBILE_UPDATE_REPO_OWNER defaults to misospace
+ok 206 - MOBILE_UPDATE_REPO_OWNER defaults to misospace
+  ---
+  duration_ms: 0.213915
+  type: 'test'
+  ...
+# Subtest: update manifest structure matches expected schema
+ok 207 - update manifest structure matches expected schema
+  ---
+  duration_ms: 0.15317
+  type: 'test'
+  ...
+# Subtest: getLatestManifest: server-success path returns release+manifest
+ok 208 - getLatestManifest: server-success path returns release+manifest
+  ---
+  duration_ms: 0.142177
+  type: 'test'
+  ...
+# Subtest: getLatestManifest: GitHub fallback path returns release+manifest (was bug \#496)
+ok 209 - getLatestManifest: GitHub fallback path returns release+manifest (was bug \#496)
+  ---
+  duration_ms: 0.104049
+  type: 'test'
+  ...
+# Subtest: getLatestManifest: both-fail path throws descriptive error
+ok 210 - getLatestManifest: both-fail path throws descriptive error
+  ---
+  duration_ms: 0.079398
+  type: 'test'
+  ...
+# Subtest: getLatestManifest: all three paths converge on { release, manifest } return shape
+ok 211 - getLatestManifest: all three paths converge on { release, manifest } return shape
+  ---
+  duration_ms: 0.082345
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims omits sub when absent
+ok 212 - mapProfileFromClaims omits sub when absent
+  ---
+  duration_ms: 0.844026
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims uses preferred_username for username
+ok 213 - mapProfileFromClaims uses preferred_username for username
+  ---
+  duration_ms: 0.107409
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims falls back to name for username
+ok 214 - mapProfileFromClaims falls back to name for username
+  ---
+  duration_ms: 0.077446
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims falls back to sub for username
+ok 215 - mapProfileFromClaims falls back to sub for username
+  ---
+  duration_ms: 0.080549
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims includes email when present
+ok 216 - mapProfileFromClaims includes email when present
+  ---
+  duration_ms: 0.096349
+  type: 'test'
+  ...
+# Subtest: mapProfileFromClaims omits email when absent
+ok 217 - mapProfileFromClaims omits email when absent
+  ---
+  duration_ms: 0.071745
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL returns absolute URL from req
+ok 218 - buildOidcCallbackURL returns absolute URL from req
+  ---
+  duration_ms: 0.138864
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL uses http protocol
+ok 219 - buildOidcCallbackURL uses http protocol
+  ---
+  duration_ms: 0.079266
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL respects OIDC_CALLBACK_URL env
+ok 220 - buildOidcCallbackURL respects OIDC_CALLBACK_URL env
+  ---
+  duration_ms: 0.114506
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL rejects non-http protocols in production
+ok 221 - buildOidcCallbackURL rejects non-http protocols in production
+  ---
+  duration_ms: 0.39309
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL rejects malformed URLs in production
+ok 222 - buildOidcCallbackURL rejects malformed URLs in production
+  ---
+  duration_ms: 0.163408
+  type: 'test'
+  ...
+# Subtest: buildOidcCallbackURL requires explicit URL in production
+ok 223 - buildOidcCallbackURL requires explicit URL in production
+  ---
+  duration_ms: 0.109545
+  type: 'test'
+  ...
+# Subtest: buildOidcAuthOptions uses callbackURL not redirect_uri
+ok 224 - buildOidcAuthOptions uses callbackURL not redirect_uri
+  ---
+  duration_ms: 0.093145
+  type: 'test'
+  ...
+# Subtest: buildOidcAuthOptions passes prompt directly not authorizationParams
+ok 225 - buildOidcAuthOptions passes prompt directly not authorizationParams
+  ---
+  duration_ms: 0.068599
+  type: 'test'
+  ...
+# Subtest: buildOidcAuthOptions omits prompt when not requested
+ok 226 - buildOidcAuthOptions omits prompt when not requested
+  ---
+  duration_ms: 0.049146
+  type: 'test'
+  ...
+# Subtest: ensureOidcSetup throws when OIDC_ISSUER is missing
+ok 227 - ensureOidcSetup throws when OIDC_ISSUER is missing
+  ---
+  duration_ms: 0.305805
+  type: 'test'
+  ...
+# Subtest: ensureOidcSetup throws when OIDC_CLIENT_ID is missing
+ok 228 - ensureOidcSetup throws when OIDC_CLIENT_ID is missing
+  ---
+  duration_ms: 0.127761
+  type: 'test'
+  ...
+# Subtest: ensureOidcSetup throws when OIDC_CLIENT_SECRET is missing
+ok 229 - ensureOidcSetup throws when OIDC_CLIENT_SECRET is missing
+  ---
+  duration_ms: 0.120145
+  type: 'test'
+  ...
+# Subtest: ensureOidcSetup allows retry after env validation failure
+ok 230 - ensureOidcSetup allows retry after env validation failure
+  ---
+  duration_ms: 0.11915
+  type: 'test'
+  ...
+# Subtest: registerAuthRoutes captures callbackURL on /auth/oidc
+ok 231 - registerAuthRoutes captures callbackURL on /auth/oidc
+  ---
+  duration_ms: 0.413368
+  type: 'test'
+  ...
+# Subtest: registerAuthRoutes passes callbackURL on /auth/oidc/callback
+ok 232 - registerAuthRoutes passes callbackURL on /auth/oidc/callback
+  ---
+  duration_ms: 0.186493
+  type: 'test'
+  ...
+# Subtest: registerAuthRoutes passes prompt directly on /auth/oidc
+ok 233 - registerAuthRoutes passes prompt directly on /auth/oidc
+  ---
+  duration_ms: 0.146401
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent parses Telegram reaction events
+ok 234 - parseGatewayReactionEvent parses Telegram reaction events
+  ---
+  duration_ms: 0.857094
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent parses Telegram message keyword
+ok 235 - parseGatewayReactionEvent parses Telegram message keyword
+  ---
+  duration_ms: 0.19665
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent parses Slack reaction events
+ok 236 - parseGatewayReactionEvent parses Slack reaction events
+  ---
+  duration_ms: 0.318087
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent parses Discord reaction events
+ok 237 - parseGatewayReactionEvent parses Discord reaction events
+  ---
+  duration_ms: 0.397778
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent parses Signal reaction events
+ok 238 - parseGatewayReactionEvent parses Signal reaction events
+  ---
+  duration_ms: 0.30489
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent returns null for non-reaction text
+ok 239 - parseGatewayReactionEvent returns null for non-reaction text
+  ---
+  duration_ms: 0.201807
+  type: 'test'
+  ...
+# Subtest: parseGatewayReactionEvent returns null for empty input
+ok 240 - parseGatewayReactionEvent returns null for empty input
+  ---
+  duration_ms: 0.088548
+  type: 'test'
+  ...
+# Subtest: normalizeReactionEmoji keeps unicode emoji intact
+ok 241 - normalizeReactionEmoji keeps unicode emoji intact
+  ---
+  duration_ms: 0.076342
+  type: 'test'
+  ...
+# Subtest: normalizeReactionEmoji resolves known shortcodes
+ok 242 - normalizeReactionEmoji resolves known shortcodes
+  ---
+  duration_ms: 0.106069
+  type: 'test'
+  ...
+# Subtest: normalizeReactionEmoji keeps unknown shortcodes untouched
+ok 243 - normalizeReactionEmoji keeps unknown shortcodes untouched
+  ---
+  duration_ms: 0.154591
+  type: 'test'
+  ...
+# Subtest: REACTION_EVENT_MATCHERS has entries for all channels
+ok 244 - REACTION_EVENT_MATCHERS has entries for all channels
+  ---
+  duration_ms: 0.145071
+  type: 'test'
+  ...
+# Subtest: browser module does not leak to Node.js global scope
+ok 245 - browser module does not leak to Node.js global scope
+  ---
+  duration_ms: 0.069373
+  type: 'test'
+  ...
+# Subtest: parses Telegram reaction events with msg and message keywords
+ok 246 - parses Telegram reaction events with msg and message keywords
+  ---
+  duration_ms: 1.365428
+  type: 'test'
+  ...
+# Subtest: parses Slack reaction events and resolves shortcode emoji
+ok 247 - parses Slack reaction events and resolves shortcode emoji
+  ---
+  duration_ms: 0.364078
+  type: 'test'
+  ...
+# Subtest: parses Slack :white_check_mark: reaction events into unicode emoji
+ok 248 - parses Slack :white_check_mark: reaction events into unicode emoji
+  ---
+  duration_ms: 0.180138
+  type: 'test'
+  ...
+# Subtest: keeps unknown shortcodes untouched for diagnostics
+ok 249 - keeps unknown shortcodes untouched for diagnostics
+  ---
+  duration_ms: 0.159409
+  type: 'test'
+  ...
+# Subtest: parses Discord reaction events with message keyword
+ok 250 - parses Discord reaction events with message keyword
+  ---
+  duration_ms: 4.04249
+  type: 'test'
+  ...
+# Subtest: parses Signal reaction events with optional on keyword
+ok 251 - parses Signal reaction events with optional on keyword
+  ---
+  duration_ms: 0.356869
+  type: 'test'
+  ...
+# Subtest: normalizeReactionEmoji keeps non-shortcode emoji intact and resolves known shortcode aliases
+ok 252 - normalizeReactionEmoji keeps non-shortcode emoji intact and resolves known shortcode aliases
+  ---
+  duration_ms: 0.14144
+  type: 'test'
+  ...
+# Subtest: returns null for non-reaction system text
+ok 253 - returns null for non-reaction system text
+  ---
+  duration_ms: 0.163824
+  type: 'test'
+  ...
+# ◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: GET /api/health returns gateway WS state fields
+ok 254 - GET /api/health returns gateway WS state fields
+  ---
+  duration_ms: 18.344111
+  type: 'test'
+  ...
+# Subtest: GET /api/health realtime state reflects gateway connection
+ok 255 - GET /api/health realtime state reflects gateway connection
+  ---
+  duration_ms: 3.275029
+  type: 'test'
+  ...
+# Subtest: GET /api/health returns consistent structure across multiple calls
+ok 256 - GET /api/health returns consistent structure across multiple calls
+  ---
+  duration_ms: 4.70798
+  type: 'test'
+  ...
+# Subtest: GET /api/health body is valid JSON with no trailing content
+ok 257 - GET /api/health body is valid JSON with no trailing content
+  ---
+  duration_ms: 1.657615
+  type: 'test'
+  ...
+# ◇ injected env (0) from .env // tip: ⌘ enable debugging { debug: true }
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: GatewayWsManager defaults are still legacy and must be overridden explicitly
+ok 258 - GatewayWsManager defaults are still legacy and must be overridden explicitly
+  ---
+  duration_ms: 0.575045
+  type: 'test'
+  ...
+# Subtest: GET /api/config exposes restored config contract defaults
+ok 259 - GET /api/config exposes restored config contract defaults
+  ---
+  duration_ms: 36.783431
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions returns development fallback session with baseline default key
+ok 260 - GET /api/sessions returns development fallback session with baseline default key
+  ---
+  duration_ms: 1512.028514
+  type: 'test'
+  ...
+# Subtest: GET /api/events exists and returns SSE headers/initial chunk instead of silently 404ing
+ok 261 - GET /api/events exists and returns SSE headers/initial chunk instead of silently 404ing
+  ---
+  duration_ms: 5.54464
+  type: 'test'
+  ...
+# Subtest: POST /api/sessions/:key/send accepts frontend message field and rejects empty payloads cleanly
+ok 262 - POST /api/sessions/:key/send accepts frontend message field and rejects empty payloads cleanly
+  ---
+  duration_ms: 9.391575
+  type: 'test'
+  ...
+# Subtest: POST /api/sessions/:key/send prefers sanitized assistant content over raw tool-result responseText
+ok 263 - POST /api/sessions/:key/send prefers sanitized assistant content over raw tool-result responseText
+  ---
+  duration_ms: 3.165602
+  type: 'test'
+  ...
+# Subtest: POST /api/sessions/:key/send-stream emits sanitized assistant text instead of raw tool output
+ok 264 - POST /api/sessions/:key/send-stream emits sanitized assistant text instead of raw tool output
+  ---
+  duration_ms: 2.927397
+  type: 'test'
+  ...
+# Subtest: GET /api/sessions/:key/history strips raw tool_result from stored assistant messages
+ok 265 - GET /api/sessions/:key/history strips raw tool_result from stored assistant messages
+  ---
+  duration_ms: 2.453032
+  type: 'test'
+  ...
+# Subtest: escapeHtml escapes &, <, > characters
+ok 266 - escapeHtml escapes &, <, > characters
+  ---
+  duration_ms: 1.469585
+  type: 'test'
+  ...
+# Subtest: escapeHtml handles &, <, > without escaping quotes
+ok 267 - escapeHtml handles &, <, > without escaping quotes
+  ---
+  duration_ms: 0.114959
+  type: 'test'
+  ...
+# Subtest: escapeHtml returns empty string for null/undefined
+ok 268 - escapeHtml returns empty string for null/undefined
+  ---
+  duration_ms: 0.084981
+  type: 'test'
+  ...
+# Subtest: escapeHtml is identity for safe strings
+ok 269 - escapeHtml is identity for safe strings
+  ---
+  duration_ms: 0.091049
+  type: 'test'
+  ...
+# Subtest: normalizedLang normalizes JS variants to javascript
+ok 270 - normalizedLang normalizes JS variants to javascript
+  ---
+  duration_ms: 0.110538
+  type: 'test'
+  ...
+# Subtest: normalizedLang normalizes TS variants to typescript
+ok 271 - normalizedLang normalizes TS variants to typescript
+  ---
+  duration_ms: 0.075596
+  type: 'test'
+  ...
+# Subtest: normalizedLang normalizes shell variants to bash
+ok 272 - normalizedLang normalizes shell variants to bash
+  ---
+  duration_ms: 0.071236
+  type: 'test'
+  ...
+# Subtest: normalizedLang normalizes yml to yaml
+ok 273 - normalizedLang normalizes yml to yaml
+  ---
+  duration_ms: 0.068127
+  type: 'test'
+  ...
+# Subtest: normalizedLang lowercases and trims input
+ok 274 - normalizedLang lowercases and trims input
+  ---
+  duration_ms: 0.108693
+  type: 'test'
+  ...
+# Subtest: normalizedLang passes through unknown values
+ok 275 - normalizedLang passes through unknown values
+  ---
+  duration_ms: 0.231036
+  type: 'test'
+  ...
+# Subtest: protectTokenMatches replaces matches with placeholders
+ok 276 - protectTokenMatches replaces matches with placeholders
+  ---
+  duration_ms: 0.278661
+  type: 'test'
+  ...
+# Subtest: restoreTokenMatches restores placeholders to original tokens
+ok 277 - restoreTokenMatches restores placeholders to original tokens
+  ---
+  duration_ms: 0.153684
+  type: 'test'
+  ...
+# Subtest: restoreTokenMatches handles missing index gracefully
+ok 278 - restoreTokenMatches handles missing index gracefully
+  ---
+  duration_ms: 0.070907
+  type: 'test'
+  ...
+# Subtest: protectTokenMatches preserves order across multiple patterns
+ok 279 - protectTokenMatches preserves order across multiple patterns
+  ---
+  duration_ms: 0.104424
+  type: 'test'
+  ...
+# Subtest: highlightCode escapes HTML in code blocks
+ok 280 - highlightCode escapes HTML in code blocks
+  ---
+  duration_ms: 0.170201
+  type: 'test'
+  ...
+# Subtest: highlightCode highlights JS keywords
+ok 281 - highlightCode highlights JS keywords
+  ---
+  duration_ms: 0.279237
+  type: 'test'
+  ...
+# Subtest: highlightCode highlights JS comments and strings
+ok 282 - highlightCode highlights JS comments and strings
+  ---
+  duration_ms: 0.096756
+  type: 'test'
+  ...
+# Subtest: highlightCode handles JSON property highlighting
+ok 283 - highlightCode handles JSON property highlighting
+  ---
+  duration_ms: 0.18036
+  type: 'test'
+  ...
+# Subtest: highlightCode handles YAML highlighting
+ok 284 - highlightCode handles YAML highlighting
+  ---
+  duration_ms: 0.164265
+  type: 'test'
+  ...
+# Subtest: highlightCode handles Bash highlighting
+ok 285 - highlightCode handles Bash highlighting
+  ---
+  duration_ms: 0.09899
+  type: 'test'
+  ...
+# Subtest: highlightCode returns plain text for unknown languages
+ok 286 - highlightCode returns plain text for unknown languages
+  ---
+  duration_ms: 0.109358
+  type: 'test'
+  ...
+# Subtest: highlightCode handles empty input
+ok 287 - highlightCode handles empty input
+  ---
+  duration_ms: 0.06329
+  type: 'test'
+  ...
+# Subtest: highlightCode handles null/undefined input
+ok 288 - highlightCode handles null/undefined input
+  ---
+  duration_ms: 0.057831
+  type: 'test'
+  ...
+# Subtest: encodeCopyPayload and decodeCopyPayload are inverses
+ok 289 - encodeCopyPayload and decodeCopyPayload are inverses
+  ---
+  duration_ms: 0.121194
+  type: 'test'
+  ...
+# Subtest: encodeCopyPayload produces base64 string
+ok 290 - encodeCopyPayload produces base64 string
+  ---
+  duration_ms: 0.070959
+  type: 'test'
+  ...
+# Subtest: decodeCopyPayload returns empty string for invalid input
+ok 291 - decodeCopyPayload returns empty string for invalid input
+  ---
+  duration_ms: 0.074654
+  type: 'test'
+  ...
+# Subtest: highlightCode does not double-escape protected tokens
+ok 292 - highlightCode does not double-escape protected tokens
+  ---
+  duration_ms: 0.071942
+  type: 'test'
+  ...
+# ◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+# ⚠️ Session store: MemoryStore (REDIS_URL not set) — not recommended for production.
+# Subtest: web mode rejects cross-origin http/https return_to
+ok 293 - web mode rejects cross-origin http/https return_to
+  ---
+  duration_ms: 0.724258
+  type: 'test'
+  ...
+# Subtest: web mode allows same-origin relative paths
+ok 294 - web mode allows same-origin relative paths
+  ---
+  duration_ms: 0.139767
+  type: 'test'
+  ...
+# Subtest: web mode allows same-origin absolute URLs (strips to path)
+ok 295 - web mode allows same-origin absolute URLs (strips to path)
+  ---
+  duration_ms: 0.099848
+  type: 'test'
+  ...
+# Subtest: mobile mode allows mobile schemes
+ok 296 - mobile mode allows mobile schemes
+  ---
+  duration_ms: 0.10778
+  type: 'test'
+  ...
+# Subtest: mobile mode rejects http/https
+ok 297 - mobile mode rejects http/https
+  ---
+  duration_ms: 0.095264
+  type: 'test'
+  ...
+# Subtest: any mode accepts all schemes (backward compat)
+ok 298 - any mode accepts all schemes (backward compat)
+  ---
+  duration_ms: 0.105007
+  type: 'test'
+  ...
+# Subtest: web mode rejects hostile return_to via query param
+ok 299 - web mode rejects hostile return_to via query param
+  ---
+  duration_ms: 0.073747
+  type: 'test'
+  ...
+# Subtest: web mode rejects hostile return_to via body param
+ok 300 - web mode rejects hostile return_to via body param
+  ---
+  duration_ms: 0.079223
+  type: 'test'
+  ...
+# Subtest: empty and whitespace return_to falls back
+ok 301 - empty and whitespace return_to falls back
+  ---
+  duration_ms: 0.085013
+  type: 'test'
+  ...
+# Subtest: invalid URLs fall back gracefully
+ok 302 - invalid URLs fall back gracefully
+  ---
+  duration_ms: 0.17198
+  type: 'test'
+  ...
+# Subtest: path traversal in relative paths is normalized by getReturnTo
+ok 303 - path traversal in relative paths is normalized by getReturnTo
+  ---
+  duration_ms: 0.108568
+  type: 'test'
+  ...
+# Subtest: same-origin absolute URL with path traversal normalizes to relative path
+ok 304 - same-origin absolute URL with path traversal normalizes to relative path
+  ---
+  duration_ms: 0.106451
+  type: 'test'
+  ...
+# Subtest: securityHeaders sets required baseline headers including CSP
+ok 305 - securityHeaders sets required baseline headers including CSP
+  ---
+  duration_ms: 0.854828
+  type: 'test'
+  ...
+# Subtest: all required security headers are present on every response
+ok 306 - all required security headers are present on every response
+  ---
+  duration_ms: 0.15377
+  type: 'test'
+  ...
+# Subtest: CSP includes all required directives (header-presence)
+ok 307 - CSP includes all required directives (header-presence)
+  ---
+  duration_ms: 0.176752
+  type: 'test'
+  ...
+# Subtest: csrfOriginCheck blocks state-changing requests from untrusted origins
+ok 308 - csrfOriginCheck blocks state-changing requests from untrusted origins
+  ---
+  duration_ms: 0.64881
+  type: 'test'
+  ...
+# Subtest: setupPassport warns when LOCAL_USERS is unset and local auth is enabled
+ok 309 - setupPassport warns when LOCAL_USERS is unset and local auth is enabled
+  ---
+  duration_ms: 77.119962
+  type: 'test'
+  ...
+# Subtest: setupPassport does not use hardcoded default credentials when LOCAL_USERS is unset
+ok 310 - setupPassport does not use hardcoded default credentials when LOCAL_USERS is unset
+  ---
+  duration_ms: 0.261683
+  type: 'test'
+  ...
+# Subtest: authenticated users can access OpenClaw agent sessions
+ok 311 - authenticated users can access OpenClaw agent sessions
+  ---
+  duration_ms: 0.697334
+  type: 'test'
+  ...
+# Subtest: session access does not treat the OpenClaw agent ID as a username
+ok 312 - session access does not treat the OpenClaw agent ID as a username
+  ---
+  duration_ms: 0.113779
+  type: 'test'
+  ...
+# Subtest: session access rejects unauthenticated users when auth is enabled
+ok 313 - session access rejects unauthenticated users when auth is enabled
+  ---
+  duration_ms: 0.095549
+  type: 'test'
+  ...
+# Subtest: session access allows auth-disabled deployments
+ok 314 - session access allows auth-disabled deployments
+  ---
+  duration_ms: 0.09649
+  type: 'test'
+  ...
+# Subtest: session access denies unknown auth modes
+ok 315 - session access denies unknown auth modes
+  ---
+  duration_ms: 0.084832
+  type: 'test'
+  ...
+# Subtest: requireSessionAccess allows an authenticated request
+ok 316 - requireSessionAccess allows an authenticated request
+  ---
+  duration_ms: 0.115555
+  type: 'test'
+  ...
+# Subtest: requireSessionAccess blocks an unauthenticated request
+ok 317 - requireSessionAccess blocks an unauthenticated request
+  ---
+  duration_ms: 0.930453
+  type: 'test'
+  ...
+# Subtest: SSE reconnect prevents duplicate EventSource instances
+ok 318 - SSE reconnect prevents duplicate EventSource instances
+  ---
+  duration_ms: 0.637776
+  type: 'test'
+  ...
+# Subtest: SSE onclose handler prevents auto-reconnect
+ok 319 - SSE onclose handler prevents auto-reconnect
+  ---
+  duration_ms: 0.150234
+  type: 'test'
+  ...
+# Subtest: SSE onerror schedules single reconnect timer
+ok 320 - SSE onerror schedules single reconnect timer
+  ---
+  duration_ms: 0.193346
+  type: 'test'
+  ...
+# Subtest: SSE reconnect to backend closes existing EventSource
+ok 321 - SSE reconnect to backend closes existing EventSource
+  ---
+  duration_ms: 0.12054
+  type: 'test'
+  ...
+# Subtest: SSE connectEventSource handles null eventSource gracefully
+ok 322 - SSE connectEventSource handles null eventSource gracefully
+  ---
+  duration_ms: 0.115885
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks localhost
+ok 323 - isForbiddenLinkPreviewHost blocks localhost
+  ---
+  duration_ms: 1.653255
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks .local domains
+ok 324 - isForbiddenLinkPreviewHost blocks .local domains
+  ---
+  duration_ms: 0.296226
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks private IPv4 addresses
+ok 325 - isForbiddenLinkPreviewHost blocks private IPv4 addresses
+  ---
+  duration_ms: 0.568894
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks IPv4 broadcast address
+ok 326 - isForbiddenLinkPreviewHost blocks IPv4 broadcast address
+  ---
+  duration_ms: 0.212199
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks private IPv6 addresses
+ok 327 - isForbiddenLinkPreviewHost blocks private IPv6 addresses
+  ---
+  duration_ms: 0.422793
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks IPv6 unspecified address
+ok 328 - isForbiddenLinkPreviewHost blocks IPv6 unspecified address
+  ---
+  duration_ms: 0.204697
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost allows public hostnames
+ok 329 - isForbiddenLinkPreviewHost allows public hostnames
+  ---
+  duration_ms: 40.794128
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost blocks empty/null/undefined
+ok 330 - isForbiddenLinkPreviewHost blocks empty/null/undefined
+  ---
+  duration_ms: 0.196803
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost with resolveDns=false skips DNS resolution
+ok 331 - isForbiddenLinkPreviewHost with resolveDns=false skips DNS resolution
+  ---
+  duration_ms: 0.133579
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps handles IPv4 addresses
+ok 332 - resolveHostToIps handles IPv4 addresses
+  ---
+  duration_ms: 0.217444
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps handles IPv6 addresses
+ok 333 - resolveHostToIps handles IPv6 addresses
+  ---
+  duration_ms: 0.114164
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate detects 127.0.0.1 as private (DNS resolution may fail in containers)
+ok 334 - hostResolvesToPrivate detects 127.0.0.1 as private (DNS resolution may fail in containers)
+  ---
+  duration_ms: 0.068082
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate handles unresolvable hostnames gracefully
+ok 335 - hostResolvesToPrivate handles unresolvable hostnames gracefully
+  ---
+  duration_ms: 1.188045
+  type: 'test'
+  ...
+# Subtest: IPv6 loopback ::1 is blocked
+ok 336 - IPv6 loopback ::1 is blocked
+  ---
+  duration_ms: 0.105913
+  type: 'test'
+  ...
+# Subtest: IPv6 link-local fe80::/10 range is blocked
+ok 337 - IPv6 link-local fe80::/10 range is blocked
+  ---
+  duration_ms: 0.051332
+  type: 'test'
+  ...
+# Subtest: IPv6 unique-local fc00::/7 range is blocked
+ok 338 - IPv6 unique-local fc00::/7 range is blocked
+  ---
+  duration_ms: 0.036175
+  type: 'test'
+  ...
+# Subtest: IPv6 unspecified :: is blocked
+ok 339 - IPv6 unspecified :: is blocked
+  ---
+  duration_ms: 0.034326
+  type: 'test'
+  ...
+# Subtest: Direct private IPv4 targets are blocked
+ok 340 - Direct private IPv4 targets are blocked
+  ---
+  duration_ms: 0.065212
+  type: 'test'
+  ...
+# Subtest: Public IPv4 addresses are allowed
+ok 341 - Public IPv4 addresses are allowed
+  ---
+  duration_ms: 0.10342
+  type: 'test'
+  ...
+# Subtest: Public hostnames are allowed for preview (simulates valid public redirect)
+ok 342 - Public hostnames are allowed for preview (simulates valid public redirect)
+  ---
+  duration_ms: 34.424616
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost handles case insensitivity
+ok 343 - isForbiddenLinkPreviewHost handles case insensitivity
+  ---
+  duration_ms: 0.809776
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost handles .localhost subdomains
+ok 344 - isForbiddenLinkPreviewHost handles .localhost subdomains
+  ---
+  duration_ms: 0.232017
+  type: 'test'
+  ...
+# Subtest: DNS resolution blocks hostnames that resolve to private addresses
+ok 345 - DNS resolution blocks hostnames that resolve to private addresses
+  ---
+  duration_ms: 0.220662
+  type: 'test'
+  ...
+# Subtest: DNS resolution allows hostnames that resolve only to public addresses
+ok 346 - DNS resolution allows hostnames that resolve only to public addresses
+  ---
+  duration_ms: 0.201428
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 rejects non-IP hostnames
+ok 347 - isPrivateIPv4 rejects non-IP hostnames
+  ---
+  duration_ms: 0.066959
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 detects all private IPv4 ranges
+ok 348 - isPrivateIPv4 detects all private IPv4 ranges
+  ---
+  duration_ms: 0.069553
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 allows public IPv4 addresses
+ok 349 - isPrivateIPv4 allows public IPv4 addresses
+  ---
+  duration_ms: 0.040717
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 detects all private IPv6 ranges
+ok 350 - isPrivateIPv6 detects all private IPv6 ranges
+  ---
+  duration_ms: 0.050463
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 allows public IPv6 addresses
+ok 351 - isPrivateIPv6 allows public IPv6 addresses
+  ---
+  duration_ms: 0.034898
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 and isPrivateIPv6 are used by hostResolvesToPrivate
+ok 352 - isPrivateIPv4 and isPrivateIPv6 are used by hostResolvesToPrivate
+  ---
+  duration_ms: 0.066798
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for 10.x.x.x range
+ok 353 - isPrivateIPv4 returns true for 10.x.x.x range
+  ---
+  duration_ms: 1.084036
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for 127.x.x.x (loopback)
+ok 354 - isPrivateIPv4 returns true for 127.x.x.x (loopback)
+  ---
+  duration_ms: 0.125884
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for 169.254.x.x (link-local)
+ok 355 - isPrivateIPv4 returns true for 169.254.x.x (link-local)
+  ---
+  duration_ms: 0.089686
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns false for 169.x where x != 254
+ok 356 - isPrivateIPv4 returns false for 169.x where x != 254
+  ---
+  duration_ms: 0.098846
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for 172.16.x.x - 172.31.x.x
+ok 357 - isPrivateIPv4 returns true for 172.16.x.x - 172.31.x.x
+  ---
+  duration_ms: 0.102791
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns false for 172.x outside 16-31 range
+ok 358 - isPrivateIPv4 returns false for 172.x outside 16-31 range
+  ---
+  duration_ms: 0.080346
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for 192.168.x.x
+ok 359 - isPrivateIPv4 returns true for 192.168.x.x
+  ---
+  duration_ms: 0.092761
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns false for 192.x where x != 168
+ok 360 - isPrivateIPv4 returns false for 192.x where x != 168
+  ---
+  duration_ms: 0.075029
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns true for broadcast 255.255.x.x
+ok 361 - isPrivateIPv4 returns true for broadcast 255.255.x.x
+  ---
+  duration_ms: 0.112514
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns false for public IPs
+ok 362 - isPrivateIPv4 returns false for public IPs
+  ---
+  duration_ms: 0.182109
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv4 returns false for non-IP strings
+ok 363 - isPrivateIPv4 returns false for non-IP strings
+  ---
+  duration_ms: 0.893066
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns true for ::1 (loopback)
+ok 364 - isPrivateIPv6 returns true for ::1 (loopback)
+  ---
+  duration_ms: 0.240603
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns true for :: (unspecified)
+ok 365 - isPrivateIPv6 returns true for :: (unspecified)
+  ---
+  duration_ms: 0.066082
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns true for fe80:: (link-local)
+ok 366 - isPrivateIPv6 returns true for fe80:: (link-local)
+  ---
+  duration_ms: 0.045456
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns true for fc00:: and fd00:: (unique-local)
+ok 367 - isPrivateIPv6 returns true for fc00:: and fd00:: (unique-local)
+  ---
+  duration_ms: 0.036311
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns false for public IPv6 addresses
+ok 368 - isPrivateIPv6 returns false for public IPv6 addresses
+  ---
+  duration_ms: 0.039206
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 handles case insensitivity
+ok 369 - isPrivateIPv6 handles case insensitivity
+  ---
+  duration_ms: 0.032973
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 strips brackets
+ok 370 - isPrivateIPv6 strips brackets
+  ---
+  duration_ms: 0.032984
+  type: 'test'
+  ...
+# Subtest: isPrivateIPv6 returns false for empty/null input
+ok 371 - isPrivateIPv6 returns false for empty/null input
+  ---
+  duration_ms: 0.031071
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps returns the IP when given an IP address
+ok 372 - resolveHostToIps returns the IP when given an IP address
+  ---
+  duration_ms: 0.725646
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps returns the IPv6 when given an IPv6 address
+ok 373 - resolveHostToIps returns the IPv6 when given an IPv6 address
+  ---
+  duration_ms: 2.915748
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps returns empty array for empty input
+ok 374 - resolveHostToIps returns empty array for empty input
+  ---
+  duration_ms: 0.081195
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps strips brackets from IPv6
+ok 375 - resolveHostToIps strips brackets from IPv6
+  ---
+  duration_ms: 0.733855
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps uses custom resolver when provided
+ok 376 - resolveHostToIps uses custom resolver when provided
+  ---
+  duration_ms: 0.099968
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps returns empty array when resolver throws
+ok 377 - resolveHostToIps returns empty array when resolver throws
+  ---
+  duration_ms: 0.079399
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps filters non-string results from resolver
+ok 378 - resolveHostToIps filters non-string results from resolver
+  ---
+  duration_ms: 0.062638
+  type: 'test'
+  ...
+# Subtest: resolveHostToIps returns empty array when resolver returns non-array
+ok 379 - resolveHostToIps returns empty array when resolver returns non-array
+  ---
+  duration_ms: 0.054652
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate returns true when resolver returns private IPv4
+ok 380 - hostResolvesToPrivate returns true when resolver returns private IPv4
+  ---
+  duration_ms: 0.096172
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate returns true when resolver returns private IPv6
+ok 381 - hostResolvesToPrivate returns true when resolver returns private IPv6
+  ---
+  duration_ms: 0.067428
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate returns true when any resolved IP is private
+ok 382 - hostResolvesToPrivate returns true when any resolved IP is private
+  ---
+  duration_ms: 0.059349
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate returns false when all resolved IPs are public
+ok 383 - hostResolvesToPrivate returns false when all resolved IPs are public
+  ---
+  duration_ms: 0.079012
+  type: 'test'
+  ...
+# Subtest: hostResolvesToPrivate returns false when resolver returns empty array
+ok 384 - hostResolvesToPrivate returns false when resolver returns empty array
+  ---
+  duration_ms: 0.054158
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost returns true for empty/null hostname
+ok 385 - isForbiddenLinkPreviewHost returns true for empty/null hostname
+  ---
+  duration_ms: 0.095904
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost returns true for localhost
+ok 386 - isForbiddenLinkPreviewHost returns true for localhost
+  ---
+  duration_ms: 0.044313
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost returns true for .local domains
+ok 387 - isForbiddenLinkPreviewHost returns true for .local domains
+  ---
+  duration_ms: 0.037419
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost returns true for private IPv4
+ok 388 - isForbiddenLinkPreviewHost returns true for private IPv4
+  ---
+  duration_ms: 0.050393
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost returns true for private IPv6
+ok 389 - isForbiddenLinkPreviewHost returns true for private IPv6
+  ---
+  duration_ms: 0.0446
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost detects DNS rebinding to private IP
+ok 390 - isForbiddenLinkPreviewHost detects DNS rebinding to private IP
+  ---
+  duration_ms: 0.060023
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost allows public host when DNS resolves to public IP
+ok 391 - isForbiddenLinkPreviewHost allows public host when DNS resolves to public IP
+  ---
+  duration_ms: 0.05922
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost skips DNS resolution when resolveDns is false
+ok 392 - isForbiddenLinkPreviewHost skips DNS resolution when resolveDns is false
+  ---
+  duration_ms: 0.055472
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost still blocks private IPs even with resolveDns: false
+ok 393 - isForbiddenLinkPreviewHost still blocks private IPs even with resolveDns: false
+  ---
+  duration_ms: 0.055227
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost still blocks localhost even with resolveDns: false
+ok 394 - isForbiddenLinkPreviewHost still blocks localhost even with resolveDns: false
+  ---
+  duration_ms: 0.036637
+  type: 'test'
+  ...
+# Subtest: isForbiddenLinkPreviewHost handles case insensitivity
+ok 395 - isForbiddenLinkPreviewHost handles case insensitivity
+  ---
+  duration_ms: 0.038818
+  type: 'test'
+  ...
+# Subtest: lib/update-manager.js imports without @capacitor/core
+ok 396 - lib/update-manager.js imports without @capacitor/core
+  ---
+  duration_ms: 1.576892
+  type: 'test'
+  ...
+# Subtest: lib/update-manager.js exposes expected exports
+ok 397 - lib/update-manager.js exposes expected exports
+  ---
+  duration_ms: 0.488505
+  type: 'test'
+  ...
+# Subtest: isMobilePlatform() returns false on server-side Node
+ok 398 - isMobilePlatform() returns false on server-side Node
+  ---
+  duration_ms: 0.112002
+  type: 'test'
+  ...
+# Subtest: compareVersions handles edge cases
+ok 399 - compareVersions handles edge cases
+  ---
+  duration_ms: 0.23143
+  type: 'test'
+  ...
+# Subtest: getManifestUrlFromRelease handles missing assets
+ok 400 - getManifestUrlFromRelease handles missing assets
+  ---
+  duration_ms: 0.797675
+  type: 'test'
+  ...
+# Subtest: getManifestUrlFromRelease finds manifest asset
+ok 401 - getManifestUrlFromRelease finds manifest asset
+  ---
+  duration_ms: 0.127378
+  type: 'test'
+  ...
+1..401
+# tests 437
+# suites 13
+# pass 428
+# fail 9
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 72973.21411
