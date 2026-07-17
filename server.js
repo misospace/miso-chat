@@ -1,11 +1,6 @@
 const express = require('express');
 const session = require('express-session');
-const { RedisStore } = require('connect-redis');
-const { createClient } = require('redis');
 const http = require('http');
-const WebSocket = require('ws');
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const cors = require('cors');
 const https = require('https');
@@ -20,10 +15,9 @@ const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
 const { requireSessionAccess } = require('./lib/session-auth');
-const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 const { createReactionsRoutes } = require('./lib/routes/reactions');
 
-const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
 const { buildSessionConfig, setupPassport, registerAuthRoutes, buildIsAuthenticated, getOidcLabel, getReturnTo } = require('./lib/auth-session');
 
@@ -68,7 +62,6 @@ const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
 const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || process.env.DEFAULT_SESSION_KEY || 'agent:main:main';
 const PUSH_NOTIFICATIONS_ENABLED = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
 const PUSH_VAPID_PUBLIC_KEY = String(process.env.PUSH_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || '').trim();
-const PUSH_CONFIG_READY = Boolean(PUSH_VAPID_PUBLIC_KEY && (process.env.PUSH_VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY) && (process.env.PUSH_VAPID_SUBJECT || process.env.PUSH_SUBJECT));
 
 const LINK_PREVIEW_TIMEOUT_MS = (() => {
   const parsed = Number(process.env.LINK_PREVIEW_TIMEOUT_MS || 5000);
@@ -370,7 +363,7 @@ const authLimiter = rateLimit({
 
     return ipKeyGenerator(req.ip);
   },
-  skip: (req) => {
+  skip: () => {
     // Skip for auth modes that don't use local auth
     return !localAuthEnabled;
   },
@@ -1098,7 +1091,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
           promisify(dns.lookup)(host),
           dnsTimeoutPromise,
         ]);
-      } catch (dnsErr) {
+      } catch {
         const dnsElapsed = Date.now() - dnsStart;
         clearTimeout(overallTimeoutHandle);
         metrics.dns += dnsElapsed;
@@ -1113,7 +1106,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
 
       // Connect + headers timeout via AbortController signal
       const connectStart = Date.now();
-      const headersTimeoutPromise = new Promise((_, reject) => {
+      const headersTimeoutPromise = new Promise(() => {
         setTimeout(() => {
           hopController.abort(new Error('headers'));
         }, LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS);
@@ -1164,7 +1157,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
           metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
 
           // Drain the response body before retrying to free socket
-          try { await hopRes.body.cancel(); } catch (_) { /* ignore */ }
+          try { await hopRes.body.cancel(); } catch { /* ignore */ }
 
           await new Promise(resolve => setTimeout(resolve, delayMs));
           continue;
