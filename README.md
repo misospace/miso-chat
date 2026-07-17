@@ -56,6 +56,10 @@ docker run -d --name miso-chat \
 | `SESSION_COOKIE_SECURE` | No | `true` in production | Override session cookie `Secure` flag |
 | `CSRF_TRUSTED_ORIGINS` | No | - | Comma-separated extra origins allowed for state-changing requests |
 | `OIDC_ENABLED` | No | `false` | Enable OIDC auth |
+| `OIDC_ISSUER` | If OIDC | - | OIDC issuer URL used for provider discovery |
+| `OIDC_CLIENT_ID` | If OIDC | - | OIDC client identifier |
+| `OIDC_CLIENT_SECRET` | If OIDC | - | OIDC client secret |
+| `OIDC_CALLBACK_URL` | **Yes for production OIDC** | - | Absolute HTTP(S) callback URL registered with the provider |
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
 | `REDIS_URL` | **Yes in production** | - | Redis/Dragonfly session store (required for production) |
 | `ALLOW_MEMORY_STORE` | No | `false` | Override production Redis requirement for development/testing |
@@ -385,7 +389,7 @@ MIT License - see [LICENSE](LICENSE).
 - WebSocket upgrades require an authenticated session (unauthenticated upgrades are rejected with 401).
 - With OIDC enabled, `/login` redirects directly to `/auth/oidc`.
 
-- Startup validation fails fast when OIDC is enabled but required env vars are missing.
+- OIDC discovery runs on the first login request and reports configuration failures through the login error flow.
 
 
 ### Home-ops tip (Dragonfly)
