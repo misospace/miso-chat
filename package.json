@@ -16,7 +16,8 @@
     "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug",
     "android:run": "npx cap sync android && npx cap run android",
     "build:csp-hashes": "node scripts/build-csp-hashes.js",
-    "check:csp-hashes": "node scripts/build-csp-hashes.js --check"
+    "check:csp-hashes": "node scripts/build-csp-hashes.js --check",
+    "check:duplicate-modules": "node scripts/check-duplicate-modules.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",
