@@ -9,7 +9,7 @@
 ### High
 - [x] Session fixation (should regenerate after login) - Fixed: Session regenerated after OIDC login (server.js:361)
 - [x] WebSocket message size limits - Fixed: JSON body parser limited to 10kb (server.js:144)
-- [ ] OIDC callback URL validation missing - Partial: Relies on passport-openidconnect library validation
+- [ ] OIDC callback URL validation missing - Partial: Relies on passport-openidconnect library validation. Verified `passport-openidconnect@0.1.2` is the latest available version (npm registry, 2026-07-15). No newer version exists to upgrade to.
 
 ### Medium
 - [x] Missing security headers (Permissions-Policy, Referrer-Policy) - Fixed: All baseline headers implemented in security.js
