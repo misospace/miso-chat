@@ -27,7 +27,7 @@
     "@capacitor/core": "^8.1.0",
     "@capgo/capacitor-updater": "^8.43.10",
     "better-sqlite3": "^13.0.0",
-    "connect-redis": "^9.0.0",
+    "connect-redis": "^10.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
     "express": "^5.0.0",
