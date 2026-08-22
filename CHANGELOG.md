@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.1](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.0...miso-chat-0.5.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **auth:** keep mobile OIDC token out of URL query strings ([#828](https://github.com/misospace/miso-chat/issues/828)) ([0e39aef](https://github.com/misospace/miso-chat/commit/0e39aeff0aa2f0a150766e6fde7535a0dd804f5a)), closes [#817](https://github.com/misospace/miso-chat/issues/817)
+* **auth:** reject weak or default LOCAL_USERS credentials in production ([#824](https://github.com/misospace/miso-chat/issues/824)) ([53b1c8c](https://github.com/misospace/miso-chat/commit/53b1c8c54f8fcc15d05b3225774212d65d4d96b5)), closes [#810](https://github.com/misospace/miso-chat/issues/810)
+* **deps:** update dependency @capgo/capacitor-updater (8.51.13 → 8.51.14) ([#823](https://github.com/misospace/miso-chat/issues/823)) ([67a090d](https://github.com/misospace/miso-chat/commit/67a090d3cf862256a713ad4cebf029a4c8693d72))
+* **deps:** update dependency openid-client (6.8.6 → 6.8.7) ([#822](https://github.com/misospace/miso-chat/issues/822)) ([45ff882](https://github.com/misospace/miso-chat/commit/45ff88277ae44dd5cf65a73cef0455bb7a46b0dd))
+* **deps:** update gradle (9.7.0 → 9.7.1) ([#819](https://github.com/misospace/miso-chat/issues/819)) ([204be0f](https://github.com/misospace/miso-chat/commit/204be0f4610a589dc76069148cc717ad4720a4c1))
+* **gateway:** prune idle gateway session subscriptions ([#826](https://github.com/misospace/miso-chat/issues/826)) ([f68b1cb](https://github.com/misospace/miso-chat/commit/f68b1cb440a2263dcd63c7f23734372cfe301d48)), closes [#811](https://github.com/misospace/miso-chat/issues/811)
+* **ota:** wire OTA bundle integrity verification ([#825](https://github.com/misospace/miso-chat/issues/825)) ([6ddc409](https://github.com/misospace/miso-chat/commit/6ddc4092c8c32006e35330fa949895e95996f42d)), closes [#814](https://github.com/misospace/miso-chat/issues/814)
+* **reactions:** bound emoji, sessionKey, and messageId input on toggle endpoint ([#830](https://github.com/misospace/miso-chat/issues/830)) ([a25b11f](https://github.com/misospace/miso-chat/commit/a25b11fcd45be0212b974a3fd9ef64311c8b817c)), closes [#816](https://github.com/misospace/miso-chat/issues/816)
+* **reactions:** normalize shortcode emoji in the toggle endpoint ([#827](https://github.com/misospace/miso-chat/issues/827)) ([cf2a8b2](https://github.com/misospace/miso-chat/commit/cf2a8b2b445b62c03a77691278833e5707623763)), closes [#813](https://github.com/misospace/miso-chat/issues/813)
+* **security:** escalate CSP manifest fallback log to error in production ([#829](https://github.com/misospace/miso-chat/issues/829)) ([e589da1](https://github.com/misospace/miso-chat/commit/e589da18198b2ac3627f610d8dddceb4ce2072b8)), closes [#812](https://github.com/misospace/miso-chat/issues/812)
+
 ## [0.5.0](https://github.com/misospace/miso-chat/compare/miso-chat-0.4.21...miso-chat-0.5.0) (2026-08-18)
 
 
