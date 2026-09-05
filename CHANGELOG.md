@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.1...miso-chat-0.6.0) (2026-09-05)
+
+
+### Features
+
+* **deps:** update dependency com.android.tools.build:gradle (9.3.2 → 9.4.0) ([#843](https://github.com/misospace/miso-chat/issues/843)) ([23f2e80](https://github.com/misospace/miso-chat/commit/23f2e808a2861df0d5036f858fc9ddf65551813e))
+* **deps:** update dependency express-rate-limit (8.6.2 → 8.7.0) ([#840](https://github.com/misospace/miso-chat/issues/840)) ([2fcfba2](https://github.com/misospace/miso-chat/commit/2fcfba2ff0150de727994bf887fd2f808528dc3e))
+* **deps:** update dependency multer (2.2.0 → 2.3.0) ([#839](https://github.com/misospace/miso-chat/issues/839)) ([8a604f5](https://github.com/misospace/miso-chat/commit/8a604f528f97c597b11fa9e3d07df56531fa637f))
+
+
+### Bug Fixes
+
+* **auth:** stop trusting forwarded headers from untrusted peers ([#855](https://github.com/misospace/miso-chat/issues/855)) ([d4d2fa4](https://github.com/misospace/miso-chat/commit/d4d2fa485449f11772860ccba31cbc79f32a67c4)), closes [#852](https://github.com/misospace/miso-chat/issues/852)
+* **db:** set busy_timeout and make reaction toggles atomic under contention ([#854](https://github.com/misospace/miso-chat/issues/854)) ([2fb5a4a](https://github.com/misospace/miso-chat/commit/2fb5a4af5b2ee260a4d3993481573de9eb9dc6ff)), closes [#853](https://github.com/misospace/miso-chat/issues/853)
+* **deps:** update capacitor monorepo (8.5.0 → 8.5.1) ([#842](https://github.com/misospace/miso-chat/issues/842)) ([5647244](https://github.com/misospace/miso-chat/commit/5647244ddc1391feaced5628eb3dcc1c891ab743))
+* **deps:** update dependency @capgo/capacitor-updater (8.51.14 → 8.51.15) ([#838](https://github.com/misospace/miso-chat/issues/838)) ([3948b7f](https://github.com/misospace/miso-chat/commit/3948b7fc14c896fec1b6609d7b93a819fbd98525))
+* **deps:** update dependency com.android.tools.build:gradle (9.3.1 → 9.3.2) ([#833](https://github.com/misospace/miso-chat/issues/833)) ([2f90e0e](https://github.com/misospace/miso-chat/commit/2f90e0e91ed4223d7f0036215d6a1761a0d0de09))
+* **link-preview:** clear per-hop connect+headers timer and fix dead Promise.race ([#844](https://github.com/misospace/miso-chat/issues/844)) ([4976ec8](https://github.com/misospace/miso-chat/commit/4976ec882be3f199c65bf60031315b45354cef05)), closes [#766](https://github.com/misospace/miso-chat/issues/766)
+
+
+### Chores
+
+* **deps:** lock file maintenance ([#835](https://github.com/misospace/miso-chat/issues/835)) ([e54e395](https://github.com/misospace/miso-chat/commit/e54e3950d8e0ae3b8dac11f98b6991021dd760ac))
+* **deps:** lock file maintenance ([#841](https://github.com/misospace/miso-chat/issues/841)) ([1184147](https://github.com/misospace/miso-chat/commit/1184147fc04ba8f561375517134536bf59c2558c))
+
 ## [0.5.1](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.0...miso-chat-0.5.1) (2026-08-22)
 
 
