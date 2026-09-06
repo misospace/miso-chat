@@ -215,6 +215,12 @@ test('hostResolvesToPrivate returns true when resolver returns private IPv4', as
   assert.equal(result, true);
 });
 
+test('hostResolvesToPrivate returns true when resolver returns RFC 6598 CGNAT IP', async () => {
+  const mockResolver = () => ['100.64.0.1'];
+  const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
 test('hostResolvesToPrivate returns true when resolver returns private IPv6', async () => {
   const mockResolver = () => ['::1'];
   const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
