@@ -95,6 +95,15 @@ test('isPrivateIPv6 returns true for fc00:: and fd00:: (unique-local)', () => {
   assert.equal(isPrivateIPv6('fdff:ffff::1'), true);
 });
 
+test('isPrivateIPv6 returns true for ff00::/8 (multicast)', () => {
+  assert.equal(isPrivateIPv6('ff02::1'), true); // link-scoped (all-nodes)
+  assert.equal(isPrivateIPv6('ff05::1'), true); // site-scoped
+  assert.equal(isPrivateIPv6('ff05::1:3'), true); // site-scoped (all-dhcp-servers)
+  assert.equal(isPrivateIPv6('ff0e::1'), true); // organization-local
+  assert.equal(isPrivateIPv6('ff00::1'), true);
+  assert.equal(isPrivateIPv6('ffff:ffff::1'), true);
+});
+
 test('isPrivateIPv6 returns false for public IPv6 addresses', () => {
   assert.equal(isPrivateIPv6('2001:4860:4860::8888'), false);
   assert.equal(isPrivateIPv6('2606:4700:4700::1111'), false);
@@ -104,6 +113,7 @@ test('isPrivateIPv6 handles case insensitivity', () => {
   assert.equal(isPrivateIPv6('FE80::1'), true);
   assert.equal(isPrivateIPv6('FC00::1'), true);
   assert.equal(isPrivateIPv6('FD00::1'), true);
+  assert.equal(isPrivateIPv6('FF02::1'), true);
 });
 
 test('isPrivateIPv6 strips brackets', () => {
@@ -224,6 +234,11 @@ test('isForbiddenLinkPreviewHost returns true for private IPv6', async () => {
   assert.equal(await isForbiddenLinkPreviewHost('::1'), true);
   assert.equal(await isForbiddenLinkPreviewHost('fe80::1'), true);
   assert.equal(await isForbiddenLinkPreviewHost('fc00::1'), true);
+});
+
+test('isForbiddenLinkPreviewHost returns true for IPv6 multicast', async () => {
+  assert.equal(await isForbiddenLinkPreviewHost('ff02::1'), true);
+  assert.equal(await isForbiddenLinkPreviewHost('ff05::1:3'), true);
 });
 
 test('isForbiddenLinkPreviewHost detects DNS rebinding to private IP', async () => {
