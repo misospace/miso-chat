@@ -15,7 +15,17 @@ const http = require('node:http');
 // to bypass that guard to exercise the overall-timeout path.
 const ssrfModule = require('../lib/ssrf-validation');
 const originalIsForbidden = ssrfModule.isForbiddenLinkPreviewHost;
+const originalResolveAndPinHost = ssrfModule.resolveAndPinHost;
 ssrfModule.isForbiddenLinkPreviewHost = async () => false;
+// Bypass the pin check for the same reason: the overall-timeout path is only
+// reachable if the hop actually connects, which the private-IP check would
+// otherwise refuse. Pass the hostname through as-is so the trickle server
+// can serve the request at 127.0.0.1.
+ssrfModule.resolveAndPinHost = async (hostname) => ({
+  hostname,
+  address: hostname,
+  family: 4,
+});
 
 const server = require('../server');
 
@@ -55,6 +65,7 @@ async function startTrickleServer() {
 
 test.after(() => {
   ssrfModule.isForbiddenLinkPreviewHost = originalIsForbidden;
+  ssrfModule.resolveAndPinHost = originalResolveAndPinHost;
 });
 
 test('slow upstream trickling body past overall budget no longer crashes the process', async () => {

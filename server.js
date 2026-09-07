@@ -17,7 +17,7 @@ const { reactions } = require('./lib/db');
 const { requireSessionAccess } = require('./lib/session-auth');
 const { createReactionsRoutes } = require('./lib/routes/reactions');
 
-const { isForbiddenLinkPreviewHost } = require('./lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost, resolveAndPinHost } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
 const { buildSessionConfig, setupPassport, registerAuthRoutes, buildIsAuthenticated, getOidcLabel, getReturnTo } = require('./lib/auth-session');
 
@@ -1350,6 +1350,25 @@ function _retryDelayMs(attempt) {
   return Math.round(exponential + (Math.random() * jitterRange * 2 - jitterRange));
 }
 
+/**
+ * Build a URL string whose host is the validated IP literal so the
+ * underlying fetch does not re-resolve the hostname. The original
+ * hostname is preserved in the `Host` header (and via `servername` for
+ * SNI on HTTPS) so virtual hosting and cert validation still see the
+ * hostname the SSRF checker approved. IPv6 literals are wrapped in
+ * `[...]` per RFC 3986.
+ *
+ * @param {URL} parsedUrl - The hop's URL parsed from the user-supplied target
+ * @param {{ hostname: string, address: string, family: 4 | 6 }} pinned
+ * @returns {string} URL string with the validated IP as host
+ */
+function rebuildUrlWithPinnedHost(parsedUrl, pinned) {
+  const url = new URL(parsedUrl.toString());
+  const hostLiteral = pinned.family === 6 ? `[${pinned.address}]` : pinned.address;
+  url.host = hostLiteral + (parsedUrl.port ? `:${parsedUrl.port}` : '');
+  return url.toString();
+}
+
 async function _fetchLinkPreview(rawUrl, targetUrl) {
   const MAX_REDIRECTS = 5;
   let currentUrl = targetUrl.toString();
@@ -1404,32 +1423,32 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       const host = parsedUrl.hostname;
 
       // Validate each hop's hostname (with DNS resolution for rebinding protection)
-      if (await isForbiddenLinkPreviewHost(host, { resolveDns: true })) {
-        clearTimeout(overallTimeoutHandle);
-        throw new Error('Redirect target is a local/private host');
-      }
-
-      // Per-phase timeouts for this hop
-      const hopController = new AbortController();
-      // Compose: abort the hop's fetch when either the per-hop timer or
-      // the overall budget fires. This is what wires the overall timer
-      // through to the in-flight fetch — it can no longer throw from a
-      // timer callback.
-      const hopSignal = AbortSignal.any([hopController.signal, overallController.signal]);
-
-      // DNS timeout: use AbortSignal.timeout to abort the lookup on slow DNS
+      // AND pin the validated IP for the outbound fetch in one step. Using the
+      // same IP we just validated as the connection target closes the
+      // time-of-check/time-of-use DNS rebinding window (issue #849).
       const dnsStart = Date.now();
-
+      let pinned;
       try {
-        await dns.promises.lookup(host, {
-          signal: AbortSignal.any([
-            AbortSignal.timeout(LINK_PREVIEW_DNS_TIMEOUT_MS),
-            overallController.signal,
-          ]),
+        pinned = await resolveAndPinHost(host, {
+          lookup: (hostname, opts, cb) =>
+            dns.promises.lookup(hostname, {
+              ...opts,
+              verbatim: true,
+              signal: AbortSignal.any([
+                AbortSignal.timeout(LINK_PREVIEW_DNS_TIMEOUT_MS),
+                overallController.signal,
+              ]),
+            }),
         });
       } catch (error) {
         if (overallController.signal.aborted) {
           throwOverallTimeout(error);
+        }
+        // PRIVATE_HOST / DNS_* errors from resolveAndPinHost: refuse the
+        // hop before any outbound connection is opened.
+        if (error && error.code === 'PRIVATE_HOST') {
+          clearTimeout(overallTimeoutHandle);
+          throw new Error('Redirect target is a local/private host');
         }
         const dnsElapsed = Date.now() - dnsStart;
         clearTimeout(overallTimeoutHandle);
@@ -1442,6 +1461,23 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         throw err;
       }
       metrics.dns += Date.now() - dnsStart;
+
+      // Rebuild the URL so the connection target is the validated IP literal.
+      // fetch() will then have nothing to resolve: an IP-literal hostname
+      // bypasses the DNS layer entirely, so an attacker who flips the A/AAAA
+      // record between the SSRF check and the fetch cannot redirect us to a
+      // private address. The original hostname is preserved in the Host
+      // header (and via `servername` for SNI on HTTPS) so virtual hosting
+      // and certificate validation continue to work.
+      const pinnedUrl = rebuildUrlWithPinnedHost(parsedUrl, pinned);
+
+      // Per-phase timeouts for this hop
+      const hopController = new AbortController();
+      // Compose: abort the hop's fetch when either the per-hop timer or
+      // the overall budget fires. This is what wires the overall timer
+      // through to the in-flight fetch — it can no longer throw from a
+      // timer callback.
+      const hopSignal = AbortSignal.any([hopController.signal, overallController.signal]);
 
       // Connect + headers timeout via AbortController signal.
       // The timer is tracked and cleared after the fetch completes so it
@@ -1461,13 +1497,21 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         while (true) {
           // Run the fetch under per-host concurrency limiting
           hopRes = await linkPreviewHostLimiter.run(host, async () => {
-            return fetch(currentUrl, {
+            return fetch(pinnedUrl, {
               method: 'GET',
               redirect: 'manual',
               signal: hopSignal,
+              // `servername` overrides SNI for HTTPS, so the certificate
+              // validation sees the validated hostname even though we are
+              // dialling the validated IP.
+              servername: pinned.hostname,
               headers: {
                 Accept: 'text/html,application/xhtml+xml',
                 'User-Agent': LINK_PREVIEW_USER_AGENT,
+                // Pin the hostname in the Host header so virtual hosting and
+                // relative redirects resolve against the original host, not
+                // the IP literal we are using as the connection target.
+                Host: pinned.hostname + (parsedUrl.port ? ':' + parsedUrl.port : ''),
               },
             });
           });
@@ -1526,12 +1570,15 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         throw new Error('Upstream request failed (' + hopStatus + ')');
       }
 
-      // Validate the final resolved URL is not a private host (catches last-hop SSRF)
-      const finalUrlParsed = hopRes.url ? new URL(hopRes.url) : null;
-      if (finalUrlParsed && await isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
-        clearTimeout(overallTimeoutHandle);
-        throw new Error('Final redirect target is a local/private host');
-      }
+      // The post-hop SSRF validation has been folded into the per-hop
+      // resolveAndPinHost() above: every hop's hostname is resolved and
+      // pinned to a public IP before any outbound connection is opened,
+      // and the same IP is used as the connection target. The validation
+      // result is enforced via the hop's pinned URL, so a separate check
+      // against hopRes.url would either duplicate work (the URL contains
+      // the IP literal we just validated, not a fresh hostname) or open a
+      // new TOCTOU window. Skipping it here preserves the invariant that
+      // the validated IP is the connection target for every hop.
 
       const contentType = String(hopRes.headers.get('content-type') || '').toLowerCase();
       if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
@@ -1579,7 +1626,13 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       metrics.bodyRead += Date.now() - bodyReadStart;
 
       const html = htmlChunks.join('').slice(0, LINK_PREVIEW_MAX_HTML_CHARS);
-      const finalUrl = hopRes.url || targetUrl.toString();
+      // The connection target is the pinned IP, so hopRes.url (which is the
+      // URL we passed to fetch) is IP-based and would mislead downstream
+      // metadata extraction. Reconstruct the canonical URL from the last
+      // hop we served, preserving the validated hostname.
+      const finalParsed = new URL(parsedUrl.toString());
+      finalParsed.hostname = pinned.hostname;
+      const finalUrl = finalParsed.toString();
       metrics.overall = Date.now() - overallStart;
       clearTimeout(overallTimeoutHandle);
       return { data: extractLinkPreviewData(html, finalUrl), metrics };
