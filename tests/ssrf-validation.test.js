@@ -89,6 +89,28 @@ test('isPrivateIPv6 returns true for fe80:: (link-local)', () => {
   assert.equal(isPrivateIPv6('fe80:abcd:ef01::1'), true);
 });
 
+test('isPrivateIPv6 returns true for the full fe80::/10 link-local range', () => {
+  // fe90: through febf: are inside fe80::/10 and must be blocked
+  assert.equal(isPrivateIPv6('fe90::1'), true);
+  assert.equal(isPrivateIPv6('fea0::1'), true);
+  assert.equal(isPrivateIPv6('feb0::1'), true);
+  assert.equal(isPrivateIPv6('feb0:0001::1'), true);
+  assert.equal(isPrivateIPv6('feb0:0001::dead:beef'), true);
+  assert.equal(isPrivateIPv6('febf:abcd::1'), true);
+  // with brackets
+  assert.equal(isPrivateIPv6('[fe90::1]'), true);
+  assert.equal(isPrivateIPv6('[fea0::1]'), true);
+  assert.equal(isPrivateIPv6('[feb0:0001::1]'), true);
+  // case insensitivity
+  assert.equal(isPrivateIPv6('FE90::1'), true);
+  assert.equal(isPrivateIPv6('FeBf:AbCd::1'), true);
+});
+
+test('isPrivateIPv6 returns false just outside the fe80::/10 range', () => {
+  assert.equal(isPrivateIPv6('fe7f::1'), false);
+  assert.equal(isPrivateIPv6('fec0::1'), false);
+});
+
 test('isPrivateIPv6 returns true for fc00:: and fd00:: (unique-local)', () => {
   assert.equal(isPrivateIPv6('fc00::1'), true);
   assert.equal(isPrivateIPv6('fd00::1'), true);
@@ -244,6 +266,12 @@ test('isForbiddenLinkPreviewHost returns true for IPv6 multicast', async () => {
 test('isForbiddenLinkPreviewHost detects DNS rebinding to private IP', async () => {
   const mockResolver = () => ['10.0.0.1'];
   const result = await isForbiddenLinkPreviewHost('evil.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost detects DNS rebinding to fe80::/10 link-local IPv6', async () => {
+  const mockResolver = () => ['fe90::1'];
+  const result = await isForbiddenLinkPreviewHost('fe90.example.com', { resolveHostToIps: mockResolver });
   assert.equal(result, true);
 });
 
