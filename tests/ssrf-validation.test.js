@@ -22,6 +22,18 @@ test('isPrivateIPv4 returns true for 127.x.x.x (loopback)', () => {
   assert.equal(isPrivateIPv4('127.255.255.255'), true);
 });
 
+test('isPrivateIPv4 returns true for 100.64.x.x - 100.127.x.x (RFC 6598 CGNAT)', () => {
+  assert.equal(isPrivateIPv4('100.64.0.0'), true);
+  assert.equal(isPrivateIPv4('100.64.0.1'), true);
+  assert.equal(isPrivateIPv4('100.127.255.255'), true);
+});
+
+test('isPrivateIPv4 returns false for 100.x outside 64-127 range', () => {
+  assert.equal(isPrivateIPv4('100.63.255.255'), false);
+  assert.equal(isPrivateIPv4('100.128.0.0'), false);
+  assert.equal(isPrivateIPv4('100.0.0.1'), false);
+});
+
 test('isPrivateIPv4 returns true for 169.254.x.x (link-local)', () => {
   assert.equal(isPrivateIPv4('169.254.0.1'), true);
   assert.equal(isPrivateIPv4('169.254.255.255'), true);
@@ -203,6 +215,12 @@ test('hostResolvesToPrivate returns true when resolver returns private IPv4', as
   assert.equal(result, true);
 });
 
+test('hostResolvesToPrivate returns true when resolver returns RFC 6598 CGNAT IP', async () => {
+  const mockResolver = () => ['100.64.0.1'];
+  const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
 test('hostResolvesToPrivate returns true when resolver returns private IPv6', async () => {
   const mockResolver = () => ['::1'];
   const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
@@ -273,6 +291,17 @@ test('isForbiddenLinkPreviewHost detects DNS rebinding to fe80::/10 link-local I
   const mockResolver = () => ['fe90::1'];
   const result = await isForbiddenLinkPreviewHost('fe90.example.com', { resolveHostToIps: mockResolver });
   assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost rejects hostname resolving to RFC 6598 CGNAT IP', async () => {
+  const mockResolver = () => ['100.64.0.1'];
+  const result = await isForbiddenLinkPreviewHost('cgnat.example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost rejects direct CGNAT IP literal', async () => {
+  assert.equal(await isForbiddenLinkPreviewHost('100.64.0.1'), true);
+  assert.equal(await isForbiddenLinkPreviewHost('100.127.255.255'), true);
 });
 
 test('isForbiddenLinkPreviewHost allows public host when DNS resolves to public IP', async () => {
