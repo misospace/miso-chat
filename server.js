@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const dns = require("dns");
+const net = require('net');
 require('dotenv').config();
 
 const { GatewayWsManager } = require('./lib/gateway-ws');
@@ -17,7 +18,7 @@ const { reactions } = require('./lib/db');
 const { requireSessionAccess } = require('./lib/session-auth');
 const { createReactionsRoutes } = require('./lib/routes/reactions');
 
-const { isForbiddenLinkPreviewHost } = require('./lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost, isForbiddenLinkPreviewAddress } = require('./lib/ssrf-validation');
 const { validateManifest } = require('./lib/mobile-manifest-validator');
 const { buildSessionConfig, setupPassport, registerAuthRoutes, buildIsAuthenticated, getOidcLabel, getReturnTo } = require('./lib/auth-session');
 
@@ -1346,6 +1347,41 @@ function _retryDelayMs(attempt) {
   return Math.round(exponential + (Math.random() * jitterRange * 2 - jitterRange));
 }
 
+/**
+ * Issue a GET over stdlib http/https with the socket pinned to an
+ * already-validated IP address (issue #849). Node's http client re-resolves
+ * DNS at connect time; pinning the lookup to the validated address closes
+ * the DNS-rebinding TOCTOU that global fetch (undici) left open. The real
+ * hostname is still used for the Host header, SNI, and cert verification.
+ */
+function _pinnedHttpRequest(parsedUrl, pinned, { headers, signal }) {
+  const transport = parsedUrl.protocol === 'https:' ? https : http;
+  const family = net.isIPv6(pinned.address) ? 6 : 4;
+  const lookup = (hostname, opts, cb) => {
+    if (opts && opts.all) { cb(null, [{ address: pinned.address, family }]); return; }
+    cb(null, pinned.address, family);
+  };
+  return new Promise((resolve, reject) => {
+    const req = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || undefined,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers,
+      signal,
+      lookup,
+      autoSelectFamily: false,
+    }, (res) => {
+      res.status = res.statusCode;
+      res.ok = res.statusCode >= 200 && res.statusCode < 300;
+      res.url = parsedUrl.href;
+      resolve(res);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function _fetchLinkPreview(rawUrl, targetUrl) {
   const MAX_REDIRECTS = 5;
   let currentUrl = targetUrl.toString();
@@ -1413,11 +1449,16 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       // timer callback.
       const hopSignal = AbortSignal.any([hopController.signal, overallController.signal]);
 
-      // DNS timeout: use AbortSignal.timeout to abort the lookup on slow DNS
+      // DNS timeout: use AbortSignal.timeout to abort the lookup on slow DNS.
+      // The resolved address is reused (not discarded) so the connect phase
+      // can pin the socket to the SAME address we validated — a fresh
+      // resolution inside the fetch is the DNS-rebinding TOCTOU hole (#849).
       const dnsStart = Date.now();
+      let pinned;
 
       try {
-        await dns.promises.lookup(host, {
+        pinned = await dns.promises.lookup(host, {
+          verbatim: true,
           signal: AbortSignal.any([
             AbortSignal.timeout(LINK_PREVIEW_DNS_TIMEOUT_MS),
             overallController.signal,
@@ -1438,6 +1479,17 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         throw err;
       }
       metrics.dns += Date.now() - dnsStart;
+
+      if (!pinned || !pinned.address) {
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('Redirect target could not be resolved');
+      }
+      // The SAME address we validated is the one dialed next, which closes
+      // the rebinding window between validation and connect.
+      if (isForbiddenLinkPreviewAddress(pinned.address)) {
+        clearTimeout(overallTimeoutHandle);
+        throw new Error('Redirect target is a local/private host');
+      }
 
       // Connect + headers timeout via AbortController signal
       const connectStart = Date.now();
@@ -1474,14 +1526,12 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       while (true) {
         // Run the fetch under per-host concurrency limiting
         hopRes = await linkPreviewHostLimiter.run(host, async () => {
-          return fetch(currentUrl, {
-            method: 'GET',
-            redirect: 'manual',
-            signal: hopSignal,
+          return _pinnedHttpRequest(parsedUrl, pinned, {
             headers: {
               Accept: 'text/html,application/xhtml+xml',
               'User-Agent': LINK_PREVIEW_USER_AGENT,
             },
+            signal: hopSignal,
           });
         });
 
@@ -1495,7 +1545,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
           metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
 
           // Drain the response body before retrying to free socket
-          try { await hopRes.body.cancel(); } catch { /* ignore */ }
+          try { hopRes.resume(); } catch { /* ignore */ }
 
           await new Promise(resolve => setTimeout(resolve, delayMs));
           continue;
@@ -1511,7 +1561,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       let hopHeaders = hopRes.headers;
       let isRedirect = false;
 
-      if (hopStatus >= 300 && hopStatus < 400 && hopHeaders.get('location')) {
+      if (hopStatus >= 300 && hopStatus < 400 && hopHeaders.location) {
         isRedirect = true;
       }
 
@@ -1522,7 +1572,7 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
           throw new Error('Redirect chain too long');
         }
         try {
-          currentUrl = new URL(hopHeaders.get('location'), currentUrl).toString();
+          currentUrl = new URL(hopHeaders.location, currentUrl).toString();
         } catch {
           clearTimeout(overallTimeoutHandle);
           throw new Error('Invalid redirect URL');
@@ -1543,14 +1593,14 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         throw new Error('Final redirect target is a local/private host');
       }
 
-      const contentType = String(hopRes.headers.get('content-type') || '').toLowerCase();
+      const contentType = String(hopRes.headers['content-type'] || '').toLowerCase();
       if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
         clearTimeout(overallTimeoutHandle);
         throw new Error('URL does not point to an HTML document');
       }
 
       // Read body with size limit and per-phase timeout
-      const htmlStream = hopRes.body;
+      const htmlStream = hopRes;
       let htmlChunks = [];
       let htmlLength = 0;
       const bodyReadController = new AbortController();

@@ -15,7 +15,9 @@ const http = require('node:http');
 // to bypass that guard to exercise the overall-timeout path.
 const ssrfModule = require('../lib/ssrf-validation');
 const originalIsForbidden = ssrfModule.isForbiddenLinkPreviewHost;
+const originalIsForbiddenAddress = ssrfModule.isForbiddenLinkPreviewAddress;
 ssrfModule.isForbiddenLinkPreviewHost = async () => false;
+ssrfModule.isForbiddenLinkPreviewAddress = () => false;
 
 const server = require('../server');
 
@@ -55,6 +57,7 @@ async function startTrickleServer() {
 
 test.after(() => {
   ssrfModule.isForbiddenLinkPreviewHost = originalIsForbidden;
+  ssrfModule.isForbiddenLinkPreviewAddress = originalIsForbiddenAddress;
 });
 
 test('slow upstream trickling body past overall budget no longer crashes the process', async () => {

@@ -269,3 +269,154 @@ test('AbortSignal.timeout produces a signal that fires after specified time', as
   assert.equal(fired, true, 'signal should have fired after timeout');
   assert.equal(signal.aborted, true, 'signal.aborted should be true after timeout');
 });
+
+// ---- Regression: DNS-rebinding IP pinning (issue #849) ----
+//
+// These tests exercise _fetchLinkPreview with DNS and the dial both stubbed,
+// so they are deterministic and CI-safe (no real network). The SSRF host
+// check must be stubbed off BEFORE require('../server') because server.js
+// destructures from the module at load time (same pattern as
+// tests/link-preview-overall-timeout.test.js). The top-level destructure at
+// the top of this file already holds the original function, so the unit
+// tests above keep exercising real validation logic.
+
+const ssrfModule = require('../lib/ssrf-validation');
+const originalIsForbiddenHost = ssrfModule.isForbiddenLinkPreviewHost;
+ssrfModule.isForbiddenLinkPreviewHost = async () => false;
+
+const httpModule = require('http');
+const { Writable, Readable } = require('stream');
+const originalHttpRequest = httpModule.request;
+
+const server = require('../server');
+
+const originalDnsPromisesLookup = dns.promises.lookup;
+
+test.after(() => {
+  ssrfModule.isForbiddenLinkPreviewHost = originalIsForbiddenHost;
+  httpModule.request = originalHttpRequest;
+  dns.promises.lookup = originalDnsPromisesLookup;
+});
+
+test('#849: private pinned DNS answer is rejected before any connection', async () => {
+  const originalLookup = dns.promises.lookup;
+  const originalRequest = httpModule.request;
+  let requestCalls = 0;
+
+  dns.promises.lookup = async (hostname) => {
+    if (hostname === 'evil.example') return { address: '127.0.0.1', family: 4 };
+    return originalLookup(hostname);
+  };
+  httpModule.request = (_options, _callback) => {
+    requestCalls++;
+    const req = new Writable({ write() {} });
+    setTimeout(() => req.emit('error', new Error('stubbed: no real connect')), 0);
+    return req;
+  };
+
+  try {
+    await assert.rejects(
+      server._fetchLinkPreview('http://evil.example/', new URL('http://evil.example/')),
+      /local\/private host/i,
+    );
+    assert.equal(requestCalls, 0, 'http.request must never be called for a private pinned address');
+  } finally {
+    dns.promises.lookup = originalLookup;
+    httpModule.request = originalRequest;
+  }
+});
+
+test('#849: DNS rebinding TOCTOU - socket dials the validated IP, not a re-resolution', async () => {
+  const originalLookup = dns.promises.lookup;
+  const originalRequest = httpModule.request;
+  const lookupCalls = [];
+  let recordedOptions = null;
+  let dialAddress = null;
+  let dialFamily = null;
+  let dialError = null;
+
+  // Call 1 (validation phase) answers public; any later call flips private.
+  dns.promises.lookup = async (hostname) => {
+    lookupCalls.push(hostname);
+    if (hostname === 'evil.example') {
+      const evilCalls = lookupCalls.filter((h) => h === 'evil.example').length;
+      return evilCalls === 1
+        ? { address: '203.0.113.7', family: 4 }
+        : { address: '127.0.0.1', family: 4 };
+    }
+    return originalLookup(hostname);
+  };
+  httpModule.request = (options, _callback) => {
+    recordedOptions = options;
+    assert.equal(options.hostname, 'evil.example', 'real hostname preserved for Host/SNI');
+    // Exercise the pinned lookup callback the way Node's http client would
+    options.lookup('evil.example', {}, (err, address, family) => {
+      dialError = err;
+      dialAddress = address;
+      dialFamily = family;
+    });
+    const req = new Writable({ write() {} });
+    setTimeout(() => req.emit('error', new Error('stubbed: no real connect')), 0);
+    return req;
+  };
+
+  try {
+    await assert.rejects(
+      server._fetchLinkPreview('http://evil.example/', new URL('http://evil.example/')),
+      /stubbed: no real connect/,
+    );
+    assert.ok(recordedOptions, 'http.request should have been called');
+    assert.equal(dialError, null, 'pinned lookup must not error');
+    assert.equal(dialAddress, '203.0.113.7', 'socket must dial the validated public IP, not the poisoned 127.0.0.1');
+    assert.equal(dialFamily, 4);
+    assert.ok(recordedOptions.signal instanceof AbortSignal, 'request must carry the hop AbortSignal');
+    assert.equal(
+      lookupCalls.filter((h) => h === 'evil.example').length,
+      1,
+      'no second DNS resolution in the connection path',
+    );
+  } finally {
+    dns.promises.lookup = originalLookup;
+    httpModule.request = originalRequest;
+  }
+});
+
+test('#849: redirect hops re-validate and re-pin (second hop never connected)', async () => {
+  const originalLookup = dns.promises.lookup;
+  const originalRequest = httpModule.request;
+  const requestCalls = [];
+
+  dns.promises.lookup = async (hostname) => {
+    if (hostname === 'start.example') return { address: '203.0.113.1', family: 4 };
+    if (hostname === 'evil.example') return { address: '10.0.0.5', family: 4 };
+    return originalLookup(hostname);
+  };
+  httpModule.request = (options, callback) => {
+    requestCalls.push(options.hostname);
+    if (options.hostname === 'start.example') {
+      const res = new Readable({ read() {} });
+      res.statusCode = 302;
+      res.headers = { location: 'http://evil.example/' };
+      res.destroy = () => {};
+      res.resume = () => {};
+      setTimeout(() => callback(res), 0);
+      const req = new Writable({ write() {} });
+      return req;
+    }
+    // Second hop: must never be reached
+    const req = new Writable({ write() {} });
+    setTimeout(() => req.emit('error', new Error('stubbed: second hop must not connect')), 0);
+    return req;
+  };
+
+  try {
+    await assert.rejects(
+      server._fetchLinkPreview('http://start.example/', new URL('http://start.example/')),
+      /local\/private host/i,
+    );
+    assert.deepEqual(requestCalls, ['start.example'], 'no second connection attempt occurred');
+  } finally {
+    dns.promises.lookup = originalLookup;
+    httpModule.request = originalRequest;
+  }
+});
