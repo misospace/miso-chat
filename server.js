@@ -243,8 +243,12 @@ function extractLinkPreviewData(html, pageUrl) {
 // SSE clients for real-time gateway event forwarding
 const sseClients = new Set();
 
-// Trust proxy for rate limiting behind Envoy
-app.set('trust proxy', 1);
+// NOTE: `app.set('trust proxy', ...)` is intentionally NOT set. Trusting one
+// hop of forwarded headers from any peer would let a direct client on port
+// 3000 spoof req.protocol / req.ip / req.get('host'). Forwarded headers are
+// instead honored per-request, only when the TCP peer is on the
+// TRUSTED_PROXY_IPS allowlist, via lib/trusted-proxies.js (buildRateLimitKey,
+// safeProtocol, safeHost).
 
 const configuredCorsOrigins = String(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -1491,67 +1495,53 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
         throw new Error('Redirect target is a local/private host');
       }
 
-      // Connect + headers timeout via AbortController signal
+      // Connect + headers timeout via AbortController signal.
+      // The timer is tracked and cleared after the fetch completes so it
+      // does not keep the event loop alive (see #766).
       const connectStart = Date.now();
-      const headersTimeoutPromise = new Promise(() => {
-        setTimeout(() => {
-          hopController.abort(new Error('headers'));
-        }, LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS);
-      });
+      const headersTimeoutHandle = setTimeout(() => {
+        hopController.abort(new Error('headers'));
+      }, LINK_PREVIEW_CONNECT_TIMEOUT_MS + LINK_PREVIEW_HEADERS_TIMEOUT_MS);
 
-      try {
-        await Promise.race([
-          Promise.resolve(), // no-op — we rely on the signal below
-          headersTimeoutPromise,
-        ]);
-      } catch (error) {
-        if (overallController.signal.aborted) {
-          throwOverallTimeout(error);
-        }
-        const connectElapsed = Date.now() - connectStart;
-        clearTimeout(overallTimeoutHandle);
-        metrics.connectHeaders += connectElapsed;
-        metrics.overall = Date.now() - overallStart;
-        const err = new Error('Preview fetch timed out during connect+headers phase after ' + connectElapsed + 'ms');
-        err.phase = 'connect+headers';
-        err.ms = connectElapsed;
-        err.metrics = metrics;
-        throw err;
-      }
-
-      // Fetch with per-host concurrency limiting and 5xx retry
+      // Fetch with per-host concurrency limiting and 5xx retry.
+      // The headersTimeoutHandle is cleared once the loop exits (success or
+      // abort) so the timer does not outlive the hop (see #766).
       let hopRes;
       let attempts = 0;
 
-      while (true) {
-        // Run the fetch under per-host concurrency limiting
-        hopRes = await linkPreviewHostLimiter.run(host, async () => {
-          return _pinnedHttpRequest(parsedUrl, pinned, {
-            headers: {
-              Accept: 'text/html,application/xhtml+xml',
-              'User-Agent': LINK_PREVIEW_USER_AGENT,
-            },
-            signal: hopSignal,
+      try {
+        while (true) {
+          // Run the fetch under per-host concurrency limiting
+          hopRes = await linkPreviewHostLimiter.run(host, async () => {
+            return _pinnedHttpRequest(parsedUrl, pinned, {
+              headers: {
+                Accept: 'text/html,application/xhtml+xml',
+                'User-Agent': LINK_PREVIEW_USER_AGENT,
+              },
+              signal: hopSignal,
+            });
           });
-        });
 
-        const hopStatus = hopRes.status;
+          const hopStatus = hopRes.status;
 
-        // Retry on 5xx (server errors) with jittered backoff
-        if (hopStatus >= 500 && hopStatus < 600 && attempts < LINK_PREVIEW_RETRY_MAX_ATTEMPTS) {
-          attempts++;
-          metrics.retryCount++;
-          const delayMs = _retryDelayMs(attempts - 1);
-          metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
+          // Retry on 5xx (server errors) with jittered backoff
+          if (hopStatus >= 500 && hopStatus < 600 && attempts < LINK_PREVIEW_RETRY_MAX_ATTEMPTS) {
+            attempts++;
+            metrics.retryCount++;
+            const delayMs = _retryDelayMs(attempts - 1);
+            metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
 
-          // Drain the response body before retrying to free socket
-          try { hopRes.resume(); } catch { /* ignore */ }
+            // Drain the response body before retrying to free socket
+            try { hopRes.resume(); } catch { /* ignore */ }
 
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          continue;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+
+          break; // Non-5xx or max retries reached
         }
-
-        break; // Non-5xx or max retries reached
+      } finally {
+        clearTimeout(headersTimeoutHandle);
       }
 
       const connectElapsed = Date.now() - connectStart;
@@ -1673,6 +1663,18 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
     if (error?.phase && error?.ms) {
       // Re-throw with timeout metadata
       throw error;
+    }
+    // The per-hop connect+headers timer aborts the hop controller with a
+    // 'headers' reason; attribute that abort to the connect+headers phase
+    // instead of the generic fetch phase (see #766).
+    if (error?.message === 'headers' && !error.phase) {
+      const elapsed = Date.now() - overallStart;
+      const err = new Error('Preview fetch timed out during connect+headers phase after ' + elapsed + 'ms');
+      err.phase = 'connect+headers';
+      err.ms = elapsed;
+      err.metrics = metrics;
+      err.cause = error;
+      throw err;
     }
     // Wrap non-timeout errors so the route handler can distinguish them
     if (!(error instanceof Error) || !error.phase) {

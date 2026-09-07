@@ -98,6 +98,10 @@ No code changes are required — the scope list is built at startup from the env
 - Enforces origin checks on `POST/PUT/PATCH/DELETE` requests to reduce CSRF risk (configure extra trusted origins with `CSRF_TRUSTED_ORIGINS`).
 - Rate limiters (`/api/*`, `/api/events/stream`, `/auth/*`) key only on `cf-connecting-ip` / `x-forwarded-for` when the direct TCP peer matches `TRUSTED_PROXY_IPS`; otherwise the key is the socket address. See [Trusted Proxies / Rate Limiting](#trusted-proxies--rate-limiting).
 
+### Session Authorization Model
+
+miso-chat authorizes sessions at the **deployment boundary**, not per user: any authenticated user (local or OIDC) can read and write every session returned by `/api/sessions`, and there is no per-user session isolation. This is intentional for single-tenant operator deployments, but if your OIDC provider mints more than one human user, every user sees every other user's session history — see [Authentication model & session authorization](SECURITY.md#authentication-model) in `SECURITY.md` before wiring up multi-user SSO.
+
 ### Trusted Proxies / Rate Limiting
 
 In earlier releases the rate limiters keyed on `cf-connecting-ip` first and `x-forwarded-for` second with no peer validation. With the app reachable directly on port 3000 (the default `docker-compose` deployment), a client could rotate those headers per request and mint an unlimited supply of rate-limit buckets, bypassing the auth limiter (20/15 min), the API limiter (100/15 min) and the SSE limiter (10/min).

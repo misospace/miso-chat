@@ -22,6 +22,18 @@ test('isPrivateIPv4 returns true for 127.x.x.x (loopback)', () => {
   assert.equal(isPrivateIPv4('127.255.255.255'), true);
 });
 
+test('isPrivateIPv4 returns true for 100.64.x.x - 100.127.x.x (RFC 6598 CGNAT)', () => {
+  assert.equal(isPrivateIPv4('100.64.0.0'), true);
+  assert.equal(isPrivateIPv4('100.64.0.1'), true);
+  assert.equal(isPrivateIPv4('100.127.255.255'), true);
+});
+
+test('isPrivateIPv4 returns false for 100.x outside 64-127 range', () => {
+  assert.equal(isPrivateIPv4('100.63.255.255'), false);
+  assert.equal(isPrivateIPv4('100.128.0.0'), false);
+  assert.equal(isPrivateIPv4('100.0.0.1'), false);
+});
+
 test('isPrivateIPv4 returns true for 169.254.x.x (link-local)', () => {
   assert.equal(isPrivateIPv4('169.254.0.1'), true);
   assert.equal(isPrivateIPv4('169.254.255.255'), true);
@@ -89,10 +101,41 @@ test('isPrivateIPv6 returns true for fe80:: (link-local)', () => {
   assert.equal(isPrivateIPv6('fe80:abcd:ef01::1'), true);
 });
 
+test('isPrivateIPv6 returns true for the full fe80::/10 link-local range', () => {
+  // fe90: through febf: are inside fe80::/10 and must be blocked
+  assert.equal(isPrivateIPv6('fe90::1'), true);
+  assert.equal(isPrivateIPv6('fea0::1'), true);
+  assert.equal(isPrivateIPv6('feb0::1'), true);
+  assert.equal(isPrivateIPv6('feb0:0001::1'), true);
+  assert.equal(isPrivateIPv6('feb0:0001::dead:beef'), true);
+  assert.equal(isPrivateIPv6('febf:abcd::1'), true);
+  // with brackets
+  assert.equal(isPrivateIPv6('[fe90::1]'), true);
+  assert.equal(isPrivateIPv6('[fea0::1]'), true);
+  assert.equal(isPrivateIPv6('[feb0:0001::1]'), true);
+  // case insensitivity
+  assert.equal(isPrivateIPv6('FE90::1'), true);
+  assert.equal(isPrivateIPv6('FeBf:AbCd::1'), true);
+});
+
+test('isPrivateIPv6 returns false just outside the fe80::/10 range', () => {
+  assert.equal(isPrivateIPv6('fe7f::1'), false);
+  assert.equal(isPrivateIPv6('fec0::1'), false);
+});
+
 test('isPrivateIPv6 returns true for fc00:: and fd00:: (unique-local)', () => {
   assert.equal(isPrivateIPv6('fc00::1'), true);
   assert.equal(isPrivateIPv6('fd00::1'), true);
   assert.equal(isPrivateIPv6('fdff:ffff::1'), true);
+});
+
+test('isPrivateIPv6 returns true for ff00::/8 (multicast)', () => {
+  assert.equal(isPrivateIPv6('ff02::1'), true); // link-scoped (all-nodes)
+  assert.equal(isPrivateIPv6('ff05::1'), true); // site-scoped
+  assert.equal(isPrivateIPv6('ff05::1:3'), true); // site-scoped (all-dhcp-servers)
+  assert.equal(isPrivateIPv6('ff0e::1'), true); // organization-local
+  assert.equal(isPrivateIPv6('ff00::1'), true);
+  assert.equal(isPrivateIPv6('ffff:ffff::1'), true);
 });
 
 test('isPrivateIPv6 returns false for public IPv6 addresses', () => {
@@ -104,6 +147,7 @@ test('isPrivateIPv6 handles case insensitivity', () => {
   assert.equal(isPrivateIPv6('FE80::1'), true);
   assert.equal(isPrivateIPv6('FC00::1'), true);
   assert.equal(isPrivateIPv6('FD00::1'), true);
+  assert.equal(isPrivateIPv6('FF02::1'), true);
 });
 
 test('isPrivateIPv6 strips brackets', () => {
@@ -171,6 +215,12 @@ test('hostResolvesToPrivate returns true when resolver returns private IPv4', as
   assert.equal(result, true);
 });
 
+test('hostResolvesToPrivate returns true when resolver returns RFC 6598 CGNAT IP', async () => {
+  const mockResolver = () => ['100.64.0.1'];
+  const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
 test('hostResolvesToPrivate returns true when resolver returns private IPv6', async () => {
   const mockResolver = () => ['::1'];
   const result = await hostResolvesToPrivate('example.com', { resolveHostToIps: mockResolver });
@@ -226,10 +276,32 @@ test('isForbiddenLinkPreviewHost returns true for private IPv6', async () => {
   assert.equal(await isForbiddenLinkPreviewHost('fc00::1'), true);
 });
 
+test('isForbiddenLinkPreviewHost returns true for IPv6 multicast', async () => {
+  assert.equal(await isForbiddenLinkPreviewHost('ff02::1'), true);
+  assert.equal(await isForbiddenLinkPreviewHost('ff05::1:3'), true);
+});
+
 test('isForbiddenLinkPreviewHost detects DNS rebinding to private IP', async () => {
   const mockResolver = () => ['10.0.0.1'];
   const result = await isForbiddenLinkPreviewHost('evil.com', { resolveHostToIps: mockResolver });
   assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost detects DNS rebinding to fe80::/10 link-local IPv6', async () => {
+  const mockResolver = () => ['fe90::1'];
+  const result = await isForbiddenLinkPreviewHost('fe90.example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost rejects hostname resolving to RFC 6598 CGNAT IP', async () => {
+  const mockResolver = () => ['100.64.0.1'];
+  const result = await isForbiddenLinkPreviewHost('cgnat.example.com', { resolveHostToIps: mockResolver });
+  assert.equal(result, true);
+});
+
+test('isForbiddenLinkPreviewHost rejects direct CGNAT IP literal', async () => {
+  assert.equal(await isForbiddenLinkPreviewHost('100.64.0.1'), true);
+  assert.equal(await isForbiddenLinkPreviewHost('100.127.255.255'), true);
 });
 
 test('isForbiddenLinkPreviewHost allows public host when DNS resolves to public IP', async () => {
