@@ -336,8 +336,21 @@ test('#849: isForbiddenLinkPreviewAddress judges IPv4-mapped IPv6 by its embedde
   assert.equal(isForbiddenLinkPreviewAddress('::ffff:127.0.0.1'), true);
   assert.equal(isForbiddenLinkPreviewAddress('::ffff:10.0.0.5'), true);
   assert.equal(isForbiddenLinkPreviewAddress('::ffff:169.254.169.254'), true);
+  // Hex-encoded and uncompressed mapped spellings dial the same v4 bits
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:7f00:1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:ffff:7f00:1'), true);
   assert.equal(isForbiddenLinkPreviewAddress('::ffff:1.1.1.1'), false);
   assert.equal(isForbiddenLinkPreviewAddress('::ffff:93.184.216.34'), false);
+});
+
+test('#849: isForbiddenLinkPreviewAddress blocks alternate spellings of loopback and unspecified', () => {
+  // Loopback and unspecified in any compression / leading-zero form
+  assert.equal(isForbiddenLinkPreviewAddress('00::1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:0:0:1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:0:0:0'), true);
+  // Legacy IPv4-compatible (::a.b.c.d) forms dial the embedded IPv4 too
+  assert.equal(isForbiddenLinkPreviewAddress('::127.0.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:0.0.0.0'), true);
 });
 
 test('#849: isForbiddenLinkPreviewAddress allows public dial targets and fails closed on junk', () => {
@@ -345,7 +358,7 @@ test('#849: isForbiddenLinkPreviewAddress allows public dial targets and fails c
     assert.equal(isForbiddenLinkPreviewAddress(ip), false, `${ip} should be allowed`);
   }
   // Anything that is not a plain IP literal is rejected before a socket dial.
-  for (const junk of ['', null, undefined, 'localhost', 'evil.example', '127.0.0.1\0', '127.0.0.1 ', 'fe80::1%eth0', '0x7f000001']) {
+  for (const junk of ['', null, undefined, 'localhost', 'evil.example', '127.0.0.1\0', '127.0.0.1 ', 'fe80::1%eth0', '0x7f000001', '1.2.3.4.5.6', ':::::::', '1.1.1.1.', 'fe80::/10']) {
     assert.equal(isForbiddenLinkPreviewAddress(junk), true, `${JSON.stringify(junk)} must fail closed`);
   }
 });
