@@ -15,7 +15,9 @@ const http = require('node:http');
 // to bypass that guard to exercise the overall-timeout path.
 const ssrfModule = require('../lib/ssrf-validation');
 const originalIsForbidden = ssrfModule.isForbiddenLinkPreviewHost;
+const originalIsForbiddenAddress = ssrfModule.isForbiddenLinkPreviewAddress;
 ssrfModule.isForbiddenLinkPreviewHost = async () => false;
+ssrfModule.isForbiddenLinkPreviewAddress = () => false;
 
 const server = require('../server');
 
@@ -55,6 +57,7 @@ async function startTrickleServer() {
 
 test.after(() => {
   ssrfModule.isForbiddenLinkPreviewHost = originalIsForbidden;
+  ssrfModule.isForbiddenLinkPreviewAddress = originalIsForbiddenAddress;
 });
 
 test('slow upstream trickling body past overall budget no longer crashes the process', async () => {
@@ -166,28 +169,26 @@ test('hop connect+headers timer is tracked and cleared (no dangling timer)', () 
 
 // Runtime check for #766: after a successful preview fetch, the per-hop
 // connect+headers timer must not remain pending. We drive a real successful
-// hop through _fetchLinkPreview by mocking fetch (returns a 200 HTML
-// response) and resolveDns (returns a public IP so SSRF validation passes),
-// then assert the pending Timeout count returns to baseline. The old code
+// hop through _fetchLinkPreview by mocking http.request — the dialer since
+// #849 replaced global fetch with a pinned stdlib request — to return a 200
+// HTML response (SSRF checks are stubbed off at the top of this file), then
+// assert the pending Timeout count returns to baseline. The old code
 // left a 15s timer dangling per hop.
 test('no pending hop timer after a successful preview fetch', async (t) => {
-  // The body is consumed via `for await`, so an async iterable is enough.
-  // Yield a string so the body-read loop (which does String(chunk)) yields
-  // the HTML text directly.
-  async function* bodyStream() {
-    yield '<html><head><title>ok</title></head><body>hi</body></html>';
-  }
+  const { Writable } = require('node:stream');
 
-  const fakeResponse = {
-    status: 200,
-    ok: true,
-    headers: new Map([['content-type', 'text/html']]),
-    url: 'http://93.184.216.34/',
-    body: bodyStream(),
-  };
-
-  // Mock fetch to return a 200 HTML response.
-  t.mock.method(globalThis, 'fetch', async () => fakeResponse);
+  // Mock http.request to deliver a 200 HTML response via its callback,
+  // mirroring how http/https.request hands back an IncomingMessage.
+  t.mock.method(http, 'request', (_options, callback) => {
+    const res = require('node:stream').Readable.from([
+      '<html><head><title>ok</title></head><body>hi</body></html>',
+    ]);
+    res.statusCode = 200;
+    res.headers = { 'content-type': 'text/html' };
+    setTimeout(() => callback(res), 0);
+    const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    return req;
+  });
 
   const countTimers = () =>
     (process.getActiveResourcesInfo() || []).filter((r) => r === 'Timeout').length;

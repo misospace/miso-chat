@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const dns = require('dns');
 
 // Import the SSRF validation helpers from the dedicated module
-const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('../lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6, isForbiddenLinkPreviewAddress } = require('../lib/ssrf-validation');
 
 // ---- Unit tests for SSRF validation helpers ----
 
@@ -268,4 +268,201 @@ test('AbortSignal.timeout produces a signal that fires after specified time', as
   await new Promise(resolve => setTimeout(resolve, timeoutMs + 10));
   assert.equal(fired, true, 'signal should have fired after timeout');
   assert.equal(signal.aborted, true, 'signal.aborted should be true after timeout');
+});
+
+// ---- Regression: DNS-rebinding IP pinning (issue #849) ----
+//
+// These tests exercise _fetchLinkPreview with DNS and the dial both stubbed,
+// so they are deterministic and CI-safe (no real network). The SSRF host
+// check must be stubbed off BEFORE require('../server') because server.js
+// destructures from the module at load time (same pattern as
+// tests/link-preview-overall-timeout.test.js). The top-level destructure at
+// the top of this file already holds the original function, so the unit
+// tests above keep exercising real validation logic.
+
+const ssrfModule = require('../lib/ssrf-validation');
+const originalIsForbiddenHost = ssrfModule.isForbiddenLinkPreviewHost;
+ssrfModule.isForbiddenLinkPreviewHost = async () => false;
+
+const httpModule = require('http');
+const { Writable, Readable } = require('stream');
+
+const server = require('../server');
+
+// DNS and http.request stubs below use t.mock.method, which the runner
+// restores automatically after each test.
+
+// ---- Unit: the dial-gate predicate itself (issue #849) ----
+//
+// isForbiddenLinkPreviewAddress guards the exact IP the pinned socket dials,
+// so its coverage must include what a resolver can hand back and what the
+// hostname-level checks never see (IPv4-mapped IPv6, 0.0.0.0).
+
+test('#849: isForbiddenLinkPreviewAddress blocks private and reserved IPv4 dial targets', () => {
+  const blocked = [
+    '127.0.0.1',
+    '127.255.255.255',
+    '10.0.0.5',
+    '192.168.1.1',
+    '172.16.0.1',
+    '169.254.169.254', // cloud IMDS
+    '100.64.0.1', // RFC 6598 CGNAT (added in #858)
+    '100.127.255.255',
+    '255.255.255.255', // broadcast
+    '0.0.0.0', // unspecified — dials loopback on Linux
+  ];
+  for (const ip of blocked) {
+    assert.equal(isForbiddenLinkPreviewAddress(ip), true, `${ip} must be forbidden as a dial target`);
+  }
+});
+
+test('#849: isForbiddenLinkPreviewAddress blocks reserved IPv6 dial targets', () => {
+  const blocked = [
+    '::1',
+    '::',
+    'fe80::1',
+    'febf::abcd', // top of fe80::/10 (hardened in #859)
+    'fc00::1',
+    'fd00::1',
+    'ff00::1', // multicast ff00::/8 (hardened in #860)
+    '[::1]', // bracketed form
+  ];
+  for (const ip of blocked) {
+    assert.equal(isForbiddenLinkPreviewAddress(ip), true, `${ip} must be forbidden as a dial target`);
+  }
+});
+
+test('#849: isForbiddenLinkPreviewAddress judges IPv4-mapped IPv6 by its embedded v4', () => {
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:127.0.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:10.0.0.5'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:169.254.169.254'), true);
+  // Hex-encoded and uncompressed mapped spellings dial the same v4 bits
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:7f00:1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:ffff:7f00:1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:1.1.1.1'), false);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:93.184.216.34'), false);
+});
+
+test('#849: isForbiddenLinkPreviewAddress blocks alternate spellings of loopback and unspecified', () => {
+  // Loopback and unspecified in any compression / leading-zero form
+  assert.equal(isForbiddenLinkPreviewAddress('00::1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:0:0:1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('0:0:0:0:0:0:0:0'), true);
+  // Legacy IPv4-compatible (::a.b.c.d) forms dial the embedded IPv4 too
+  assert.equal(isForbiddenLinkPreviewAddress('::127.0.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewAddress('::ffff:0.0.0.0'), true);
+});
+
+test('#849: isForbiddenLinkPreviewAddress allows public dial targets and fails closed on junk', () => {
+  for (const ip of ['1.1.1.1', '8.8.8.8', '93.184.216.34', '100.128.0.1', '2001:db8::1', '2606:4700::1']) {
+    assert.equal(isForbiddenLinkPreviewAddress(ip), false, `${ip} should be allowed`);
+  }
+  // Anything that is not a plain IP literal is rejected before a socket dial.
+  for (const junk of ['', null, undefined, 'localhost', 'evil.example', '127.0.0.1\0', '127.0.0.1 ', 'fe80::1%eth0', '0x7f000001', '1.2.3.4.5.6', ':::::::', '1.1.1.1.', 'fe80::/10']) {
+    assert.equal(isForbiddenLinkPreviewAddress(junk), true, `${JSON.stringify(junk)} must fail closed`);
+  }
+});
+
+test('#849: private pinned DNS answer is rejected before any connection', async (t) => {
+  let requestCalls = 0;
+
+  t.mock.method(dns.promises, 'lookup', async (hostname) => {
+    if (hostname === 'evil.example') return { address: '127.0.0.1', family: 4 };
+    throw new Error(`unexpected dns lookup: ${hostname}`);
+  });
+  t.mock.method(httpModule, 'request', (_options, _callback) => {
+    requestCalls++;
+    const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    setTimeout(() => req.emit('error', new Error('stubbed: no real connect')), 0);
+    return req;
+  });
+
+  await assert.rejects(
+    server._fetchLinkPreview('http://evil.example/', new URL('http://evil.example/')),
+    /local\/private host/i,
+  );
+  assert.equal(requestCalls, 0, 'http.request must never be called for a private pinned address');
+});
+
+test('#849: DNS rebinding TOCTOU - socket dials the validated IP, not a re-resolution', async (t) => {
+  const lookupCalls = [];
+  let recordedOptions = null;
+  let dialAddress = null;
+  let dialFamily = null;
+  let dialError = null;
+
+  // Call 1 (validation phase) answers public; any later call flips private —
+  // the classic rebinding flip. It must not matter: the connection path may
+  // only use the pinned answer.
+  t.mock.method(dns.promises, 'lookup', async (hostname) => {
+    lookupCalls.push(hostname);
+    if (hostname === 'evil.example') {
+      const evilCalls = lookupCalls.filter((h) => h === 'evil.example').length;
+      return evilCalls === 1
+        ? { address: '203.0.113.7', family: 4 }
+        : { address: '127.0.0.1', family: 4 };
+    }
+    throw new Error(`unexpected dns lookup: ${hostname}`);
+  });
+  t.mock.method(httpModule, 'request', (options, _callback) => {
+    recordedOptions = options;
+    assert.equal(options.hostname, 'evil.example', 'real hostname preserved for Host/SNI');
+    // Exercise the pinned lookup callback the way Node's http client would
+    options.lookup('evil.example', {}, (err, address, family) => {
+      dialError = err;
+      dialAddress = address;
+      dialFamily = family;
+    });
+    const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    setTimeout(() => req.emit('error', new Error('stubbed: no real connect')), 0);
+    return req;
+  });
+
+  await assert.rejects(
+    server._fetchLinkPreview('http://evil.example/', new URL('http://evil.example/')),
+    /stubbed: no real connect/,
+  );
+  assert.ok(recordedOptions, 'http.request should have been called');
+  assert.equal(dialError, null, 'pinned lookup must not error');
+  assert.equal(dialAddress, '203.0.113.7', 'socket must dial the validated public IP, not the poisoned 127.0.0.1');
+  assert.equal(dialFamily, 4);
+  assert.ok(recordedOptions.signal instanceof AbortSignal, 'request must carry the hop AbortSignal');
+  assert.equal(
+    lookupCalls.filter((h) => h === 'evil.example').length,
+    1,
+    'no second DNS resolution in the connection path',
+  );
+});
+
+test('#849: redirect hops re-validate and re-pin (second hop never connected)', async (t) => {
+  const requestCalls = [];
+
+  t.mock.method(dns.promises, 'lookup', async (hostname) => {
+    if (hostname === 'start.example') return { address: '203.0.113.1', family: 4 };
+    if (hostname === 'evil.example') return { address: '10.0.0.5', family: 4 };
+    throw new Error(`unexpected dns lookup: ${hostname}`);
+  });
+  t.mock.method(httpModule, 'request', (options, callback) => {
+    requestCalls.push(options.hostname);
+    if (options.hostname === 'start.example') {
+      const res = new Readable({ read() {} });
+      res.statusCode = 302;
+      res.headers = { location: 'http://evil.example/' };
+      res.destroy = () => {};
+      res.resume = () => {};
+      setTimeout(() => callback(res), 0);
+      const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+      return req;
+    }
+    // Second hop: must never be reached
+    const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+    setTimeout(() => req.emit('error', new Error('stubbed: second hop must not connect')), 0);
+    return req;
+  });
+
+  await assert.rejects(
+    server._fetchLinkPreview('http://start.example/', new URL('http://start.example/')),
+    /local\/private host/i,
+  );
+  assert.deepEqual(requestCalls, ['start.example'], 'no second connection attempt occurred');
 });
