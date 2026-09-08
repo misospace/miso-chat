@@ -1357,6 +1357,11 @@ function _retryDelayMs(attempt) {
  * DNS at connect time; pinning the lookup to the validated address closes
  * the DNS-rebinding TOCTOU that global fetch (undici) left open. The real
  * hostname is still used for the Host header, SNI, and cert verification.
+ *
+ * No URL parsing happens here: `parsedUrl` comes from `new URL()` upstream,
+ * which rejects null bytes and normalizes the path before it reaches the
+ * request line. Nothing in this path touches the local filesystem, so
+ * traversal-style inputs are inert -- this only selects an HTTP request-target.
  */
 function _pinnedHttpRequest(parsedUrl, pinned, { headers, signal }) {
   const transport = parsedUrl.protocol === 'https:' ? https : http;
@@ -1531,8 +1536,11 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
             const delayMs = _retryDelayMs(attempts - 1);
             metrics.retries.push({ status: hopStatus, attempt: attempts, delayMs });
 
-            // Drain the response body before retrying to free socket
-            try { hopRes.resume(); } catch { /* ignore */ }
+            // Abort reads on the response body before retrying so the socket
+            // is released immediately (matches the old fetch body.cancel()
+            // semantics; resume() would keep a slow upstream's socket
+            // subscribed through the backoff).
+            try { hopRes.destroy(); } catch { /* ignore */ }
 
             await new Promise(resolve => setTimeout(resolve, delayMs));
             continue;
