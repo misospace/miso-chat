@@ -185,7 +185,7 @@ test('no pending hop timer after a successful preview fetch', async (t) => {
     ]);
     res.statusCode = 200;
     res.headers = { 'content-type': 'text/html' };
-    setImmediate(() => callback(res));
+    setTimeout(() => callback(res), 0);
     const req = new Writable({ write(_chunk, _enc, cb) { cb(); } });
     return req;
   });
