@@ -196,6 +196,72 @@ test('GatewayWsManager createRequestId produces unique IDs', () => {
   }
 });
 
+// Issue #867: GATEWAY_WS_FORWARDED_FOR — opt-in, validated deployment-supplied
+// forwarded client IP for the persistent Gateway WebSocket handshake.
+test('resolveGatewayWsForwardedFor: unset/empty values resolve to undefined', () => {
+  const { resolveGatewayWsForwardedFor } = require('../server');
+  assert.equal(resolveGatewayWsForwardedFor(undefined), undefined);
+  assert.equal(resolveGatewayWsForwardedFor(''), undefined);
+  assert.equal(resolveGatewayWsForwardedFor('   '), undefined);
+});
+
+test('resolveGatewayWsForwardedFor: valid IPv4 literal passes through unchanged', () => {
+  const { resolveGatewayWsForwardedFor } = require('../server');
+  assert.equal(resolveGatewayWsForwardedFor('10.1.2.3'), '10.1.2.3');
+  assert.equal(resolveGatewayWsForwardedFor('  192.168.0.1  '), '192.168.0.1');
+});
+
+test('resolveGatewayWsForwardedFor: valid IPv6 literal passes through unchanged', () => {
+  const { resolveGatewayWsForwardedFor } = require('../server');
+  assert.equal(resolveGatewayWsForwardedFor('2001:db8::1'), '2001:db8::1');
+  assert.equal(resolveGatewayWsForwardedFor('fe80::1'), 'fe80::1');
+});
+
+test('resolveGatewayWsForwardedFor: invalid values throw a configuration error', () => {
+  const { resolveGatewayWsForwardedFor } = require('../server');
+  const invalidValues = [
+    '10.0.0.1,10.0.0.2', // comma-separated chain
+    '10.0.0.0/8', // CIDR
+    '2001:db8::/32', // IPv6 CIDR
+    'openclaw.llm.svc.cluster.local', // hostname
+    '10.0.0.1\r\nX-Injected: yes', // header injection
+    '10.0.0.1\nX-Injected: yes', // header injection (LF)
+    'not-an-ip',
+    '10.0.0.256',
+  ];
+  for (const value of invalidValues) {
+    assert.throws(
+      () => resolveGatewayWsForwardedFor(value),
+      /Invalid GATEWAY_WS_FORWARDED_FOR/,
+      `should reject ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test('GatewayWsManager: unset GATEWAY_WS_FORWARDED_FOR leaves handshake headers unchanged', () => {
+  const manager = new GatewayWsManager({
+    headers: { Authorization: 'Bearer tok', Origin: 'http://localhost:3000' },
+  });
+  assert.deepEqual(manager.headers, { Authorization: 'Bearer tok', Origin: 'http://localhost:3000' });
+  assert.equal('X-Forwarded-For' in manager.headers, false, 'no X-Forwarded-For header when unset');
+});
+
+test('GatewayWsManager: validated literal is passed through as X-Forwarded-For', () => {
+  const { resolveGatewayWsForwardedFor } = require('../server');
+  for (const literal of ['10.1.2.3', '2001:db8::1']) {
+    const manager = new GatewayWsManager({
+      headers: {
+        Authorization: 'Bearer tok',
+        Origin: 'http://localhost:3000',
+        'X-Forwarded-For': resolveGatewayWsForwardedFor(literal),
+      },
+    });
+    assert.equal(manager.headers['X-Forwarded-For'], literal, `X-Forwarded-For should be exactly ${literal}`);
+    assert.equal(manager.headers.Authorization, 'Bearer tok');
+    assert.equal(manager.headers.Origin, 'http://localhost:3000');
+  }
+});
+
 test('GatewayWsManager reconnect backoff increases delay', () => {
   const manager = new GatewayWsManager({
     reconnectDelay: 100,

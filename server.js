@@ -574,6 +574,35 @@ function buildGatewayDeviceAuth({ nonce, scopes }) {
   const signature = base64UrlEncode(crypto.sign(null, Buffer.from(payload, 'utf8'), crypto.createPrivateKey(identity.privateKeyPem)));
   return { id: identity.deviceId, publicKey: identity.publicKey, signature, signedAt, nonce };
 }
+/**
+ * Resolve the optional GATEWAY_WS_FORWARDED_FOR deployment-supplied forwarded
+ * client IP (issue #867). OpenClaw gateways that list the Miso pod's source
+ * network in `gateway.trustedProxies` reject the persistent WebSocket upgrade
+ * with `403 proxy_attribution_required` unless the handshake carries an
+ * `X-Forwarded-For` header naming a client address the gateway does not itself
+ * treat as a trusted proxy.
+ *
+ * Only a single IP address literal (IPv4 or IPv6) is accepted. Empty values
+ * are treated as unset; anything else (comma-separated chains, CIDRs,
+ * hostnames, prebuilt header values) is a configuration error that fails
+ * startup before any Gateway connection attempt.
+ *
+ * @param {string|undefined} raw - Raw environment value
+ * @returns {string|undefined} The validated IP literal, or undefined when unset
+ */
+function resolveGatewayWsForwardedFor(raw) {
+  if (raw == null) return undefined;
+  const value = String(raw).trim();
+  if (value === '') return undefined;
+  if (net.isIP(value) !== 0) return value;
+  throw new Error(
+    `Invalid GATEWAY_WS_FORWARDED_FOR value: expected a single IP address literal ` +
+    `(IPv4 or IPv6), got ${JSON.stringify(value)}. Lists, CIDRs, hostnames, and ` +
+    `prebuilt header values are not allowed.`,
+  );
+}
+const GATEWAY_WS_FORWARDED_FOR = resolveGatewayWsForwardedFor(process.env.GATEWAY_WS_FORWARDED_FOR);
+
 // Infer GATEWAY_WS_ORIGIN from CORS_ORIGIN if not explicitly set
 const configuredGatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN;
 const corsOrigin = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
@@ -604,6 +633,7 @@ const gatewayWsManager = new GatewayWsManager({
   headers: {
     ...(GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {}),
     ...(gatewayWsOrigin ? { Origin: gatewayWsOrigin } : {}),
+    ...(GATEWAY_WS_FORWARDED_FOR ? { 'X-Forwarded-For': GATEWAY_WS_FORWARDED_FOR } : {}),
   },
 });
 gatewayWsManager.on('error', (err) => {
@@ -2160,4 +2190,5 @@ module.exports = {
   noteGatewaySessionSubscription,
   pruneIdleGatewaySessionSubscriptions,
   GATEWAY_SESSION_SUBSCRIPTION_IDLE_MS,
+  resolveGatewayWsForwardedFor,
 };

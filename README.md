@@ -50,6 +50,7 @@ docker run -d --name miso-chat \
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GATEWAY_URL` | Yes | - | WebSocket URL to OpenClaw gateway |
+| `GATEWAY_WS_FORWARDED_FOR` | No | - | Optional deployment-owned forwarded client IP sent as `X-Forwarded-For` on the persistent Gateway WebSocket handshake. Accepts a single IP address literal (IPv4 or IPv6) only; empty is treated as unset and any other value (lists, CIDRs, hostnames, prebuilt header values) fails startup. Set only when the target OpenClaw gateway lists this deployment's source network in `gateway.trustedProxies` and requires proxy attribution — the value must be an address the gateway does not itself treat as a trusted proxy. No default or example value is provided; each deployment chooses its own. |
 | `PORT` | No | `3000` | Server port |
 | `SESSION_SECRET` | Yes | - | Secret for sessions |
 | `SESSION_COOKIE_SAMESITE` | No | `strict` (or `lax` when OIDC enabled) | Session cookie SameSite policy (`strict|lax|none`) |
