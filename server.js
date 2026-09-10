@@ -1465,6 +1465,12 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
     throw err;
   };
 
+  // Per-hop body-read state, hoisted to function scope so the outer catch
+  // can attribute a stream error to the body phase when the body-read
+  // timer destroyed the stream (issue #871).
+  let bodyReadController = null;
+  let bodyReadStart = 0;
+
   // Try/finally guarantees the overall timer is cleared even on
   // unanticipated error paths; combined with the abort-based timer
   // above, this is what prevents a slow upstream from crashing the
@@ -1631,24 +1637,33 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       const htmlStream = hopRes;
       let htmlChunks = [];
       let htmlLength = 0;
-      const bodyReadController = new AbortController();
+      bodyReadController = new AbortController();
       // Compose: the body-read loop aborts when either the per-phase
       // body-read timer OR the overall budget timer fires. This is
       // what lets the overall budget interrupt an in-flight body read
       // without throwing from a timer callback.
       const bodyReadSignal = AbortSignal.any([bodyReadController.signal, overallController.signal]);
-      const bodyReadStart = Date.now();
+      bodyReadStart = Date.now();
       const bodyReadTimeoutHandle = setTimeout(() => {
         bodyReadController.abort(new Error('body-read'));
+        // Destroy the stream so an in-flight `for await` unwinds even when
+        // the upstream has gone quiet (no further chunks to trip the loop's
+        // abort check). Without this, a paused body would hang the read
+        // until the overall budget fires (issue #871).
+        try { hopRes.destroy(); } catch { /* ignore */ }
       }, LINK_PREVIEW_BODY_READ_TIMEOUT_MS);
 
+      let bodyTruncated = false;
       try {
         for await (const chunk of htmlStream) {
           if (bodyReadController.signal.aborted || bodyReadSignal.aborted) break;
           const chunkStr = Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk);
           htmlLength += chunkStr.length;
           if (htmlLength > LINK_PREVIEW_MAX_HTML_CHARS * 1.5) {
-            // Soft limit: stop reading but don't error yet
+            // Soft limit: stop reading; the partial HTML is surfaced as a
+            // phased error below so the cache never stores a truncated
+            // preview (issue #871).
+            bodyTruncated = true;
             break;
           }
           htmlChunks.push(chunkStr);
@@ -1662,6 +1677,34 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
       // preview.
       if (overallController.signal.aborted) {
         throwOverallTimeout();
+      }
+
+      // A per-phase body-read timeout means we only have partial HTML.
+      // Surface it as a phased AbortError so the route responds 504 and
+      // the cache never stores a truncated preview (issue #871).
+      if (bodyReadController.signal.aborted) {
+        const bodyReadElapsed = Date.now() - bodyReadStart;
+        metrics.bodyRead += bodyReadElapsed;
+        metrics.overall = Date.now() - overallStart;
+        const err = new Error('Preview fetch timed out during body phase after ' + bodyReadElapsed + 'ms');
+        err.phase = 'body';
+        err.ms = bodyReadElapsed;
+        err.metrics = metrics;
+        err.name = 'AbortError';
+        throw err;
+      }
+
+      // The soft body-length limit was hit: we only have partial HTML.
+      // Throw so the cache never stores a truncated preview (issue #871).
+      if (bodyTruncated) {
+        const bodyReadElapsed = Date.now() - bodyReadStart;
+        metrics.bodyRead += bodyReadElapsed;
+        metrics.overall = Date.now() - overallStart;
+        const err = new Error('Preview body exceeded the soft length limit and was truncated');
+        err.phase = 'body-truncated';
+        err.ms = bodyReadElapsed;
+        err.metrics = metrics;
+        throw err;
       }
 
       metrics.bodyRead += Date.now() - bodyReadStart;
@@ -1701,6 +1744,21 @@ async function _fetchLinkPreview(rawUrl, targetUrl) {
     if (error?.phase && error?.ms) {
       // Re-throw with timeout metadata
       throw error;
+    }
+    // The per-phase body-read timer destroys the stream to unwind a paused
+    // `for await`; that surfaces here as a stream error. Attribute it to the
+    // body phase so the route responds 504 instead of a generic 502
+    // (issue #871).
+    if (bodyReadController?.signal.aborted && !error.phase) {
+      const bodyReadElapsed = Date.now() - bodyReadStart;
+      metrics.bodyRead += bodyReadElapsed;
+      const err = new Error('Preview fetch timed out during body phase after ' + bodyReadElapsed + 'ms');
+      err.phase = 'body';
+      err.ms = bodyReadElapsed;
+      err.metrics = metrics;
+      err.name = 'AbortError';
+      err.cause = error;
+      throw err;
     }
     // The per-hop connect+headers timer aborts the hop controller with a
     // 'headers' reason; attribute that abort to the connect+headers phase
@@ -2180,6 +2238,7 @@ module.exports = {
   extractMediaUrls,
   mergeHistoryToolResults,
   _fetchLinkPreview,
+  linkPreviewCache,
   humanizeAgentToken,
   inferAgentNameFromKey,
   sseClients,
