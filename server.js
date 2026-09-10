@@ -2238,6 +2238,7 @@ module.exports = {
   extractMediaUrls,
   mergeHistoryToolResults,
   _fetchLinkPreview,
+  linkPreviewCache,
   humanizeAgentToken,
   inferAgentNameFromKey,
   sseClients,
