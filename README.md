@@ -20,6 +20,13 @@
 - 🤖 **Automated**: CI/CD with linting, testing, and multi-platform builds
 - 📲 **OTA Updates**: Automatic over-the-air updates for native mobile apps (no external service required)
 
+## Documentation
+
+- [docs/OTA-UPDATES.md](docs/OTA-UPDATES.md) — mobile over-the-air update flow.
+- [RELEASE.md](RELEASE.md) — release process and runbook.
+- [REALTIME-CONTRACT.md](REALTIME-CONTRACT.md) — WebSocket / gateway realtime contract.
+- [SECURITY_REVIEW.md](SECURITY_REVIEW.md) — security audit findings and remediation status.
+
 ## Quick Start
 
 ### Docker Compose
