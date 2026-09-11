@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.6.0](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.1...miso-chat-0.6.0) (2026-09-11)
+
+
+### Features
+
+* **deps:** update dependency com.android.tools.build:gradle (9.3.2 → 9.4.0) ([#843](https://github.com/misospace/miso-chat/issues/843)) ([23f2e80](https://github.com/misospace/miso-chat/commit/23f2e808a2861df0d5036f858fc9ddf65551813e))
+* **deps:** update dependency express-rate-limit (8.6.2 → 8.7.0) ([#840](https://github.com/misospace/miso-chat/issues/840)) ([2fcfba2](https://github.com/misospace/miso-chat/commit/2fcfba2ff0150de727994bf887fd2f808528dc3e))
+* **deps:** update dependency multer (2.2.0 → 2.3.0) ([#839](https://github.com/misospace/miso-chat/issues/839)) ([8a604f5](https://github.com/misospace/miso-chat/commit/8a604f528f97c597b11fa9e3d07df56531fa637f))
+
+
+### Bug Fixes
+
+* **auth:** stop trusting forwarded headers from untrusted peers ([#855](https://github.com/misospace/miso-chat/issues/855)) ([d4d2fa4](https://github.com/misospace/miso-chat/commit/d4d2fa485449f11772860ccba31cbc79f32a67c4)), closes [#852](https://github.com/misospace/miso-chat/issues/852)
+* **db:** set busy_timeout and make reaction toggles atomic under contention ([#854](https://github.com/misospace/miso-chat/issues/854)) ([2fb5a4a](https://github.com/misospace/miso-chat/commit/2fb5a4af5b2ee260a4d3993481573de9eb9dc6ff)), closes [#853](https://github.com/misospace/miso-chat/issues/853)
+* **deps:** update capacitor monorepo (8.5.0 → 8.5.1) ([#842](https://github.com/misospace/miso-chat/issues/842)) ([5647244](https://github.com/misospace/miso-chat/commit/5647244ddc1391feaced5628eb3dcc1c891ab743))
+* **deps:** update capacitor monorepo (8.5.1 → 8.5.2) ([#874](https://github.com/misospace/miso-chat/issues/874)) ([d3f7107](https://github.com/misospace/miso-chat/commit/d3f7107f588c4389be798267d86fd9358963219b))
+* **deps:** update dependency @capgo/capacitor-updater (8.51.14 → 8.51.15) ([#838](https://github.com/misospace/miso-chat/issues/838)) ([3948b7f](https://github.com/misospace/miso-chat/commit/3948b7fc14c896fec1b6609d7b93a819fbd98525))
+* **deps:** update dependency com.android.tools.build:gradle (9.3.1 → 9.3.2) ([#833](https://github.com/misospace/miso-chat/issues/833)) ([2f90e0e](https://github.com/misospace/miso-chat/commit/2f90e0e91ed4223d7f0036215d6a1761a0d0de09))
+* **deps:** update dependency openid-client (6.8.7 → 6.8.8) ([#857](https://github.com/misospace/miso-chat/issues/857)) ([56a3b6e](https://github.com/misospace/miso-chat/commit/56a3b6ee9fb2c247c8b7b2a4db0e6061d1efebb9))
+* **gateway:** satisfy OpenClaw trusted-proxy attribution ([#868](https://github.com/misospace/miso-chat/issues/868)) ([5c9b2dd](https://github.com/misospace/miso-chat/commit/5c9b2dd74b547ee6698b5a240cf88620b7a2ac80)), closes [#867](https://github.com/misospace/miso-chat/issues/867)
+* **link-preview:** clear per-hop connect+headers timer and fix dead Promise.race ([#844](https://github.com/misospace/miso-chat/issues/844)) ([4976ec8](https://github.com/misospace/miso-chat/commit/4976ec882be3f199c65bf60031315b45354cef05)), closes [#766](https://github.com/misospace/miso-chat/issues/766)
+* **link-preview:** surface body-read timeout as 504 instead of truncated 200 ([#873](https://github.com/misospace/miso-chat/issues/873)) ([1bf390d](https://github.com/misospace/miso-chat/commit/1bf390d2f29c02530266358764cfc81564065c75))
+* **mobile-update:** bound GitHub fetches in /api/mobile/update-manifest ([#875](https://github.com/misospace/miso-chat/issues/875)) ([acc0d9e](https://github.com/misospace/miso-chat/commit/acc0d9ee9ac9bcbfb6ef5954e67813a9518c53b0)), closes [#869](https://github.com/misospace/miso-chat/issues/869)
+* **security:** pin link-preview fetch to the validated DNS answer ([#864](https://github.com/misospace/miso-chat/issues/864)) ([08dd53b](https://github.com/misospace/miso-chat/commit/08dd53bc6e9471d08ee1e92481c83c794d063e8f))
+* **ssrf:** block full fe80::/10 link-local range in isPrivateIPv6 ([#859](https://github.com/misospace/miso-chat/issues/859)) ([eebf5a5](https://github.com/misospace/miso-chat/commit/eebf5a57d8d9f5bec13c68ed5c749a3d325944ce)), closes [#846](https://github.com/misospace/miso-chat/issues/846)
+* **ssrf:** block IPv6 multicast range ff00::/8 in isPrivateIPv6 ([#860](https://github.com/misospace/miso-chat/issues/860)) ([1897ba3](https://github.com/misospace/miso-chat/commit/1897ba3dd319c36341d9688ef488e218ab5353d3)), closes [#848](https://github.com/misospace/miso-chat/issues/848)
+
+
+### Chores
+
+* **deps:** lock file maintenance ([#835](https://github.com/misospace/miso-chat/issues/835)) ([e54e395](https://github.com/misospace/miso-chat/commit/e54e3950d8e0ae3b8dac11f98b6991021dd760ac))
+* **deps:** lock file maintenance ([#841](https://github.com/misospace/miso-chat/issues/841)) ([1184147](https://github.com/misospace/miso-chat/commit/1184147fc04ba8f561375517134536bf59c2558c))
+* **deps:** lock file maintenance ([#863](https://github.com/misospace/miso-chat/issues/863)) ([d1e6916](https://github.com/misospace/miso-chat/commit/d1e69160fb1a1da8d497acf3e0ff607a93b250b1))
+
+
+### Documentation
+
+* **readme:** delete stale SUMMARY.md and index canonical docs ([#872](https://github.com/misospace/miso-chat/issues/872)) ([b3fb9c7](https://github.com/misospace/miso-chat/commit/b3fb9c732e2beb2a00b3bae921fc56b274eb3a46))
+* **security:** document the deployment-boundary session authorization model ([#861](https://github.com/misospace/miso-chat/issues/861)) ([c31bf7b](https://github.com/misospace/miso-chat/commit/c31bf7b9b31f8e90aca918215b67ee55b46c6b8a)), closes [#850](https://github.com/misospace/miso-chat/issues/850)
+
 ## [0.5.1](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.0...miso-chat-0.5.1) (2026-08-22)
 
 
