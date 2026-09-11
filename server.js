@@ -142,12 +142,35 @@ const MOBILE_UPDATE_REPO_OWNER = process.env.MOBILE_UPDATE_REPO_OWNER || "misosp
 const MOBILE_UPDATE_REPO_NAME = process.env.MOBILE_UPDATE_REPO_NAME || "miso-chat";
 const MOBILE_UPDATE_GITHUB_API_URL = "https://api.github.com";
 const MOBILE_UPDATE_CACHE_TTL_MS = Number(process.env.MOBILE_UPDATE_CACHE_TTL_MS || 300000); // 5 min default
+// Per-fetch deadline for the two outbound calls in /api/mobile/update-manifest.
+// Must be short enough that a stalled api.github.com cannot hold the mobile
+// app's update check open. Default 8000ms sits well below the express-session
+// timeout and above the typical GitHub API p99 (~1-2s).
+const MOBILE_UPDATE_FETCH_TIMEOUT_MS = (() => {
+  const raw = process.env.MOBILE_UPDATE_FETCH_TIMEOUT_MS;
+  if (raw == null || raw === '') return 8000;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 8000;
+  return Math.floor(parsed);
+})();
 // In-memory cache: process-level only (not shared across multiple server instances behind LB).
 // Each instance maintains its own mobileUpdateCache and TTL independently, so multi-instance
 // deployments can serve stale manifests for up to MOBILE_UPDATE_CACHE_TTL_MS (default 5 min).
 // For multi-instance deployments, consider using a Redis-backed cache for this path.
 let mobileUpdateCache = null;
 let mobileUpdateCacheTime = 0;
+
+// Build an AbortSignal that fires either when MOBILE_UPDATE_FETCH_TIMEOUT_MS
+// elapses or when the inbound HTTP request is aborted (client disconnect).
+// Either source causes both fetch() calls in /api/mobile/update-manifest to
+// reject, which the handler maps to a logged 502 response.
+function createMobileUpdateFetchSignal(req) {
+  const timeoutSignal = AbortSignal.timeout(MOBILE_UPDATE_FETCH_TIMEOUT_MS);
+  if (req && req.signal) {
+    return AbortSignal.any([timeoutSignal, req.signal]);
+  }
+  return timeoutSignal;
+}
 
 function decodeHtmlEntities(value) {
   return String(value || '')
@@ -413,9 +436,10 @@ app.get("/api/mobile/update-manifest", async (req, res) => {
   }
 
   try {
+    const fetchSignal = createMobileUpdateFetchSignal(req);
     const resp = await fetch(
       `${MOBILE_UPDATE_GITHUB_API_URL}/repos/${MOBILE_UPDATE_REPO_OWNER}/${MOBILE_UPDATE_REPO_NAME}/releases/latest`,
-      { headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": `miso-chat-update/${APP_VERSION}` } },
+      { headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": `miso-chat-update/${APP_VERSION}` }, signal: fetchSignal },
     );
     if (!resp.ok) {
       return res.status(resp.status).json({ error: "Failed to fetch latest release" });
@@ -425,7 +449,7 @@ app.get("/api/mobile/update-manifest", async (req, res) => {
     if (!manifestAsset) {
       return res.status(404).json({ error: "update-manifest.json not found in latest release" });
     }
-    const manifestResp = await fetch(manifestAsset.browser_download_url, { headers: { Accept: "application/json" } });
+    const manifestResp = await fetch(manifestAsset.browser_download_url, { headers: { Accept: "application/json" }, signal: fetchSignal });
     if (!manifestResp.ok) {
       return res.status(manifestResp.status).json({ error: "Failed to fetch update manifest" });
     }
@@ -2231,6 +2255,11 @@ module.exports = {
   getReturnTo,
   gracefulShutdown,
   MAX_CHAT_MESSAGE_LENGTH,
+  MOBILE_UPDATE_FETCH_TIMEOUT_MS,
+  MOBILE_UPDATE_CACHE_TTL_MS,
+  createMobileUpdateFetchSignal,
+  getMobileUpdateCache: () => mobileUpdateCache,
+  getMobileUpdateCacheTime: () => mobileUpdateCacheTime,
   extractUserFacingAssistantText,
   extractNeedsInputPrompt,
   extractThinkingText,
