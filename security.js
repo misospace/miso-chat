@@ -1,10 +1,18 @@
 // Lightweight security middleware for miso-chat.
 // Provides baseline security headers + per-session CSRF tokens + origin checks
 // for state-changing browser requests.
+//
+// Forwarded-header gating: `X-Forwarded-Proto` / `X-Forwarded-Host` are only
+// honored when the TCP peer is on the TRUSTED_PROXY_IPS allowlist — the same
+// gate the rate limiters apply via lib/trusted-proxies.js (buildRateLimitKey,
+// safeProtocol, safeHost). With the default empty allowlist (the direct-on-
+// port-3000 deployment shape) a client cannot use forged forwarded headers to
+// mint HSTS or bypass the CSRF origin check.
 
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { safeHost, safeProtocol } = require('./lib/trusted-proxies');
 
 function normalizeOrigin(value) {
   const raw = String(value || '').trim();
@@ -75,13 +83,20 @@ function getRequestOrigin(req) {
   }
 }
 
+/**
+ * Determine the origin the server claims for this request, i.e.
+ * `protocol://host` from the perspective of the client that reached it.
+ *
+ * `X-Forwarded-Proto` / `X-Forwarded-Host` are honored only when the TCP peer
+ * is on the TRUSTED_PROXY_IPS allowlist (lib/trusted-proxies.js); for any
+ * other peer — the default direct-on-port-3000 shape — the forwarded headers
+ * are client-controlled and are ignored, so the origin falls back to the
+ * socket's actual protocol and the `Host` header the client actually used.
+ */
 function getServerOrigin(req) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  const protocol = forwardedProto || req.protocol || 'http';
-  const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
-  const host = forwardedHost || req.get('host') || '';
-
-  return normalizeOrigin(`${protocol}://${host}`);
+  // safeProtocol/safeHost gate the forwarded headers on isTrustedProxy() and
+  // fall back to req.protocol / the Host header for untrusted peers.
+  return normalizeOrigin(`${safeProtocol(req)}://${safeHost(req)}`);
 }
 
 /**
@@ -95,22 +110,16 @@ function getServerOrigin(req) {
  *   1. `ENFORCE_HTTPS=true` — operator opt-in for HTTPS-everywhere deployments
  *      where TLS is terminated upstream (e.g. Envoy) and `req.protocol` still
  *      reports `http` to Node.
- *   2. `X-Forwarded-Proto: https` — covers the common Envoy/ALB/Cloudflare
- *      case where TLS is terminated in front of Node.
- *   3. `req.protocol === 'https'` — covers direct TLS to Node.
+ *   2. `safeProtocol(req) === 'https'` — either `X-Forwarded-Proto: https`
+ *      from a peer on the TRUSTED_PROXY_IPS allowlist (lib/trusted-proxies.js)
+ *      or `req.protocol === 'https'` for direct TLS to Node. For any other
+ *      TCP peer (the default direct-on-port-3000 shape) `X-Forwarded-Proto`
+ *      is client-controlled and is ignored, so a forged header cannot mint
+ *      HSTS on a plaintext deployment.
  */
 function isHttpsRequest(req) {
   if (process.env.ENFORCE_HTTPS === 'true') return true;
-  const headers = (req && req.headers) || {};
-  const forwardedProto = String(headers['x-forwarded-proto'] || '')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  if (forwardedProto === 'https') return true;
-  if (typeof req.protocol === 'string' && req.protocol.toLowerCase() === 'https') {
-    return true;
-  }
-  return false;
+  return safeProtocol(req) === 'https';
 }
 
 /**

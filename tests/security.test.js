@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 // security.js exports [securityHeaders, csrfTokenCheck, csrfOriginCheck]
 const [securityHeaders, , csrfOriginCheck] = require('../security');
+const tp = require('../lib/trusted-proxies');
 
 function createResponseMock() {
   const headers = {};
@@ -128,14 +129,25 @@ test('Strict-Transport-Security is set when req.protocol is https', () => {
   );
 });
 
-test('Strict-Transport-Security is set when X-Forwarded-Proto is https', () => {
-  const req = { protocol: 'http', headers: { 'x-forwarded-proto': 'https' } };
-  const res = createResponseMock();
-  securityHeaders(req, res, () => {});
-  assert.equal(
-    res.headers['Strict-Transport-Security'],
-    'max-age=31536000; includeSubDomains',
-  );
+test('Strict-Transport-Security is set when X-Forwarded-Proto is https from a trusted peer', () => {
+  process.env.TRUSTED_PROXY_IPS = '127.0.0.1';
+  tp.resetTrustedProxiesCache();
+  try {
+    const req = {
+      protocol: 'http',
+      headers: { 'x-forwarded-proto': 'https' },
+      socket: { remoteAddress: '127.0.0.1' },
+    };
+    const res = createResponseMock();
+    securityHeaders(req, res, () => {});
+    assert.equal(
+      res.headers['Strict-Transport-Security'],
+      'max-age=31536000; includeSubDomains',
+    );
+  } finally {
+    delete process.env.TRUSTED_PROXY_IPS;
+    tp.resetTrustedProxiesCache();
+  }
 });
 
 test('Strict-Transport-Security is set when ENFORCE_HTTPS=true', () => {
@@ -158,16 +170,173 @@ test('Strict-Transport-Security is set when ENFORCE_HTTPS=true', () => {
   }
 });
 
-test('Strict-Transport-Security honours comma-separated X-Forwarded-Proto', () => {
+test('Strict-Transport-Security honours comma-separated X-Forwarded-Proto from a trusted peer', () => {
   // Envoy/ALB often append to a comma-separated X-Forwarded-Proto; the first
   // hop is the authoritative one.
-  const req = { protocol: 'http', headers: { 'x-forwarded-proto': 'https,http' } };
+  process.env.TRUSTED_PROXY_IPS = '127.0.0.1';
+  tp.resetTrustedProxiesCache();
+  try {
+    const req = {
+      protocol: 'http',
+      headers: { 'x-forwarded-proto': 'https,http' },
+      socket: { remoteAddress: '127.0.0.1' },
+    };
+    const res = createResponseMock();
+    securityHeaders(req, res, () => {});
+    assert.equal(
+      res.headers['Strict-Transport-Security'],
+      'max-age=31536000; includeSubDomains',
+    );
+  } finally {
+    delete process.env.TRUSTED_PROXY_IPS;
+    tp.resetTrustedProxiesCache();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests (issue #883): `isHttpsRequest` and `getServerOrigin` used
+// to read `X-Forwarded-Proto` / `X-Forwarded-Host` unconditionally. On the
+// default direct-on-port-3000 deployment shape (empty TRUSTED_PROXY_IPS) a
+// plain-HTTP client could therefore (a) trick a victim's browser into
+// caching a one-year HSTS pin for a plaintext origin and (b) forge both
+// forwarded headers so `csrfOriginCheck`'s same-origin short-circuit accepts
+// a cross-site request. These tests pin that the forwarded headers are now
+// gated on the trusted-proxy allowlist.
+// ---------------------------------------------------------------------------
+
+test('forged X-Forwarded-Proto from an untrusted peer does not emit HSTS', () => {
+  // No trusted proxies configured: the default deployment shape.
+  delete process.env.TRUSTED_PROXY_IPS;
+  tp.resetTrustedProxiesCache();
+
+  const req = {
+    protocol: 'http',
+    headers: { 'x-forwarded-proto': 'https' },
+    socket: { remoteAddress: '203.0.113.5' },
+  };
   const res = createResponseMock();
   securityHeaders(req, res, () => {});
   assert.equal(
     res.headers['Strict-Transport-Security'],
-    'max-age=31536000; includeSubDomains',
+    undefined,
+    'a forged X-Forwarded-Proto must not mint HSTS on a plaintext deployment',
   );
+});
+
+test('forged X-Forwarded-Host does not let an untrusted peer pass csrfOriginCheck', () => {
+  // No trusted proxies configured. The attacker spoofs both forwarded headers
+  // so the server-claimed origin matches their attacker Origin; that must no
+  // longer satisfy the same-origin short-circuit — only the configured
+  // allowlist can.
+  delete process.env.TRUSTED_PROXY_IPS;
+  tp.resetTrustedProxiesCache();
+
+  const req = {
+    method: 'POST',
+    protocol: 'http',
+    headers: {
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': 'attacker.example',
+      host: '127.0.0.1:3000',
+    },
+    socket: { remoteAddress: '203.0.113.5' },
+    get(name) {
+      if (name === 'origin') return 'https://attacker.example';
+      if (name === 'referer') return undefined;
+      if (name === 'host') return '127.0.0.1:3000';
+      return undefined;
+    },
+  };
+
+  const res = createResponseMock();
+  let nextCalled = false;
+  csrfOriginCheck(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, false, 'forged forwarded headers must not satisfy the same-origin check');
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(res.payload, { error: 'Forbidden: untrusted request origin' });
+});
+
+test('csrfOriginCheck still passes when the Origin is on the configured allowlist (untrusted peer)', () => {
+  // Even with an untrusted peer, a legitimate browser Origin that is on the
+  // allowlist must still be accepted — the hardening must not break the
+  // allowlist path.
+  delete process.env.TRUSTED_PROXY_IPS;
+  tp.resetTrustedProxiesCache();
+
+  const req = {
+    method: 'POST',
+    protocol: 'http',
+    headers: { host: '127.0.0.1:3000' },
+    socket: { remoteAddress: '203.0.113.5' },
+    get(name) {
+      if (name === 'origin') return 'http://127.0.0.1:3000'; // on the default allowlist
+      if (name === 'host') return '127.0.0.1:3000';
+      return undefined;
+    },
+  };
+
+  const res = createResponseMock();
+  let nextCalled = false;
+  csrfOriginCheck(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true, 'an allowlisted Origin must still pass');
+  assert.equal(res.statusCode, 200);
+});
+
+test('a trusted proxy peer with X-Forwarded-Proto: https emits HSTS and uses the forwarded origin', () => {
+  process.env.TRUSTED_PROXY_IPS = '127.0.0.1';
+  tp.resetTrustedProxiesCache();
+
+  try {
+    // HSTS: a trusted proxy terminates TLS; the forwarded https must be honored.
+    const hstsReq = {
+      protocol: 'http',
+      headers: { 'x-forwarded-proto': 'https' },
+      socket: { remoteAddress: '127.0.0.1' },
+    };
+    const hstsRes = createResponseMock();
+    securityHeaders(hstsReq, hstsRes, () => {});
+    assert.equal(
+      hstsRes.headers['Strict-Transport-Security'],
+      'max-age=31536000; includeSubDomains',
+    );
+
+    // CSRF: a trusted proxy also sets X-Forwarded-Host, so the server origin
+    // reflects the public https origin and a matching same-origin POST passes
+    // without needing to be on the allowlist.
+    const csrfReq = {
+      method: 'POST',
+      protocol: 'http',
+      headers: {
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'miso-chat.example.com',
+        host: '127.0.0.1:3000',
+      },
+      socket: { remoteAddress: '127.0.0.1' },
+      get(name) {
+        if (name === 'origin') return 'https://miso-chat.example.com';
+        if (name === 'host') return '127.0.0.1:3000';
+        return undefined;
+      },
+    };
+
+    const csrfRes = createResponseMock();
+    let nextCalled = false;
+    csrfOriginCheck(csrfReq, csrfRes, () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true, 'a trusted proxy asserting the real origin must satisfy the same-origin check');
+    assert.equal(csrfRes.statusCode, 200);
+  } finally {
+    delete process.env.TRUSTED_PROXY_IPS;
+    tp.resetTrustedProxiesCache();
+  }
 });
 
 test('CSP includes all required directives (header-presence)', () => {
