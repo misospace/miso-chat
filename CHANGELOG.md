@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Bug Fixes
+
+* **security:** stop trusting `X-Forwarded-Proto` / `X-Forwarded-Host` from untrusted peers when gating HSTS and the CSRF origin check ([#883](https://github.com/misospace/miso-chat/issues/883))
+
 ## [0.6.0](https://github.com/misospace/miso-chat/compare/miso-chat-0.5.1...miso-chat-0.6.0) (2026-09-11)
 
 
