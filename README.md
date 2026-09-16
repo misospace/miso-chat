@@ -1,5 +1,12 @@
 # Miso Chat
 
+> 🌉 **ARCHIVED — RETIRED FROM SERVICE**
+>
+> miso-chat is being archived and will receive no further updates. The official OpenClaw desktop app and the Control UI at `miso.jory.dev` replaced it entirely.
+>
+> It ran faithfully from its first deploy to its last — WebSocket chat, OIDC logins, push notifications and all. Thanks for the memories. — Miso 🍲
+
+
 <p align="center">
   <img src="https://img.shields.io/docker/v/ghcr.io/misospace/miso-chat?sort=semver&label=ghcr" alt="GHCR">
   <img src="https://github.com/misospace/miso-chat/actions/workflows/build.yaml/badge.svg" alt="Build">
