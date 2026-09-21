@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/misospace/miso-chat/compare/miso-chat-0.6.0...miso-chat-0.7.0) (2026-09-15)
+
+
+### Features
+
+* **deps:** update dependency multer (2.3.0 → 2.4.0) ([#879](https://github.com/misospace/miso-chat/issues/879)) ([1d1cf04](https://github.com/misospace/miso-chat/commit/1d1cf041976808d4ad030f5bdd48d0b332e054f0))
+* **scope:** add GitHub icon to banner ([#878](https://github.com/misospace/miso-chat/issues/878)) ([28412e3](https://github.com/misospace/miso-chat/commit/28412e332dc98096bb54bf0f7ca967e7a7526ded)), closes [#876](https://github.com/misospace/miso-chat/issues/876)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @capgo/capacitor-updater (8.51.15 → 8.51.16) ([#881](https://github.com/misospace/miso-chat/issues/881)) ([7736d08](https://github.com/misospace/miso-chat/commit/7736d0849cc899b67a2bef8a8dabeafa7acfa42c))
+* **security:** stop trusting forwarded headers from untrusted peers in security.js ([#886](https://github.com/misospace/miso-chat/issues/886)) ([2db559d](https://github.com/misospace/miso-chat/commit/2db559def9204be301f497f9d8419c76d759b1b0)), closes [#883](https://github.com/misospace/miso-chat/issues/883)
+
+
+### Chores
+
+* **deps:** lock file maintenance ([#877](https://github.com/misospace/miso-chat/issues/877)) ([a93bad7](https://github.com/misospace/miso-chat/commit/a93bad780351ad6429f91950e826dc28f436e305))
+
 ## [Unreleased]
 
 ### Bug Fixes
